@@ -45,6 +45,7 @@ let syncAgain = false;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const isQuota = (e) => e?.name === 'QuotaExceededError' || e?.code === 22;
 const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+const warn = (what) => (e) => console.warn(`Atlas: ${what}`, e);   // best-effort step failed: leave a trace, carry on
 const emit = (type = 'change') => bus.dispatchEvent(new Event(type));
 
 function upsert(list, item) {
@@ -156,15 +157,21 @@ const TRIP_DEFAULTS = () => ({
 });
 
 /**
- * Create (no id) or update a place → its id. Country / region / province are computed from the coordinates
- * when the caller leaves `country` undefined and the place is new or its coordinates changed.
+ * Create (no id) or update a place → its id. Country / region / province:
+ * - `country` provided (even null): exactly the provided country / region / province (missing → null);
+ * - else coordinates explicitly set to null: cleared (a provided region / province is kept);
+ * - else computed from the coordinates when the place is new or its coordinates changed.
  */
 export async function savePlace(p) {
   const before = p.id ? doc.places.find((x) => x.id === p.id) : undefined;
-  const lat = p.lat ?? before?.lat;
-  const lon = p.lon ?? before?.lon;
+  const lat = p.lat === undefined ? before?.lat : p.lat;   // null in `p` means "removed", not "unchanged"
+  const lon = p.lon === undefined ? before?.lon : p.lon;
   let geo = null;
-  if (p.country === undefined && isNum(lat) && isNum(lon) && (!before || lat !== before.lat || lon !== before.lon)) {
+  if (p.country !== undefined) {
+    geo = { country: p.country, region: p.region ?? null, province: p.province ?? null };
+  } else if (p.lat === null || p.lon === null) {
+    geo = { country: null, region: p.region ?? null, province: p.province ?? null };
+  } else if (isNum(lat) && isNum(lon) && (!before || lat !== before.lat || lon !== before.lon)) {
     geo = await locateCoords(lat, lon).catch(() => ({ country: null, region: null, province: null }));
   }
   const old = p.id ? doc.places.find((x) => x.id === p.id) : undefined;   // doc may have changed meanwhile
@@ -176,15 +183,20 @@ export async function savePlace(p) {
   return id;
 }
 
-/** Soft delete; `photos` also deletes the place's photos. */
-export async function deletePlace(id, { photos = false } = {}) {
-  const p = doc.places.find((x) => x.id === id);
-  if (!p) return;
-  p.deleted = true;
-  p.updatedAt = Date.now();
-  const gone = photos ? markPhotosDeleted(doc.photos.filter((f) => f.place === id).map((f) => f.id)) : [];
+/** Soft delete of a place / trip (`list` = 'places' | 'trips'); `photos` also deletes the photos whose `field` is its id. */
+async function softDelete(list, field, id, photos) {
+  const o = doc[list].find((x) => x.id === id);
+  if (!o) return;
+  o.deleted = true;
+  o.updatedAt = Date.now();
+  const gone = photos ? markPhotosDeleted(doc.photos.filter((f) => f[field] === id).map((f) => f.id)) : [];
   await cleanupPhotos(gone);
   await save();
+}
+
+/** Soft delete; `photos` also deletes the place's photos. */
+export function deletePlace(id, { photos = false } = {}) {
+  return softDelete('places', 'place', id, photos);
 }
 
 /** Create (no id) or update a trip → its id. */
@@ -200,14 +212,8 @@ export async function saveTrip(t) {
 }
 
 /** Soft delete; `photos` also deletes the trip's photos. */
-export async function deleteTrip(id, { photos = false } = {}) {
-  const t = doc.trips.find((x) => x.id === id);
-  if (!t) return;
-  t.deleted = true;
-  t.updatedAt = Date.now();
-  const gone = photos ? markPhotosDeleted(doc.photos.filter((f) => f.trip === id).map((f) => f.id)) : [];
-  await cleanupPhotos(gone);
-  await save();
+export function deleteTrip(id, { photos = false } = {}) {
+  return softDelete('trips', 'trip', id, photos);
 }
 
 /** Diary page of one trip day; fields not in `patch` are kept. */
@@ -267,7 +273,7 @@ function markPhotosDeleted(ids) {
 async function cleanupPhotos(ids) {
   for (const id of ids) {
     await dropBlobs(id);
-    if (cfg) await enqueue({ op: 'del', id }).catch(() => {});   // best effort: the deletion itself must still be saved
+    if (cfg) await enqueue({ op: 'del', id }).catch(warn('coda foto: eliminazione non accodata'));   // the deletion itself must still be saved
   }
 }
 
@@ -323,7 +329,8 @@ export async function addPhotos(files, { place, trip, day, onProgress } = {}) {
   if (metas.length) {
     doc.photos.push(...metas);                    // before queueing: a running sync drops items whose photo it cannot find
     if (cfg) {
-      for (const m of metas) await enqueue({ op: 'put', id: m.id }).catch(() => {});   // best effort
+      // best effort: a photo whose put is not queued here is queued by the next runQueue (enqueueLocalPhotos)
+      for (const m of metas) await enqueue({ op: 'put', id: m.id }).catch(warn('coda foto: caricamento non accodato'));
     }
     await save();
   }
@@ -398,6 +405,16 @@ export function photoUrl(id, kind = 'thumb') {
     loading.set(k, p);
   }
   return loading.get(k);
+}
+
+/**
+ * Revoke and forget the cached object URL of one photo ('thumb' | 'full'): the viewer calls it for `full` when it
+ * closes, so full-size images do not pile up in memory. The next photoUrl() makes a new URL from the Blob.
+ */
+export function releasePhotoUrl(id, kind = 'full') {
+  const k = `${id}:${kind}`;
+  if (urls.has(k)) URL.revokeObjectURL(urls.get(k));
+  urls.delete(k);                                 // a load still in flight is left alone: a new request shares it
 }
 
 /**
@@ -483,6 +500,7 @@ export async function importBackup(file) {
   if (!validateDoc(data)) throw new Error(MSG.badBackup);
   const r = mergeDocs(doc, data);
   doc = r.doc;
+  await purgeDeletedBlobs();                      // photos the backup marks as deleted
   await save();
   return { count: r.count };
 }
@@ -517,11 +535,11 @@ async function resetUploads() {
   for (const k of await dbKeys('meta')) if (String(k).startsWith('up:')) await dbDel('meta', k);
 }
 
-/** Local Blobs of deleted photos (deleted on another device) are not needed any more (spec §9.3). */
+/** Local Blobs of deleted photos (deleted on another device or by an import) are not needed any more (spec §9.3). */
 async function purgeDeletedBlobs() {
-  if (!persistent) return;
   const gone = doc.photos.filter((f) => f.deleted).map((f) => f.id);
-  if (!gone.length) return;
+  for (const id of gone) revokeUrls(id);          // cached object URLs go even when no Blob is left
+  if (!persistent || !gone.length) return;
   const have = new Set([...(await dbKeys('full')), ...(await dbKeys('thumb'))]);
   for (const id of gone) if (have.has(id)) await dropBlobs(id);
 }
@@ -538,10 +556,10 @@ async function adopt(incoming) {
 /** Queue a `put` for every local photo that was never uploaded and is not queued yet. */
 async function enqueueLocalPhotos() {
   if (!persistent) return;
-  const pending = new Set((await queueAll()).filter((q) => q.op === 'put').map((q) => q.id));
   const full = new Set(await dbKeys('full'));
   const thumb = new Set(await dbKeys('thumb'));
   const flags = new Set(await dbKeys('meta'));
+  const pending = new Set((await queueAll()).filter((q) => q.op === 'put').map((q) => q.id));   // last: freshest view of the queue
   const ids = doc.photos
     .filter((f) => !f.deleted && full.has(f.id) && thumb.has(f.id) && !flags.has(`up:${f.id}`) && !pending.has(f.id))
     .map((f) => f.id);
@@ -556,7 +574,7 @@ export async function connectSync(token, repo, password) {
   if (before && (before.owner !== cfg.owner || before.repo !== cfg.repo)) await resetUploads();
   await storeCfg();
   await adopt(r.doc);
-  await enqueueLocalPhotos();
+  await enqueueLocalPhotos().catch(warn('coda foto: scansione iniziale non riuscita'));   // runQueue repeats it
   clearTimeout(rateTimer);
   pausedUntil = 0;
   setSync('idle', '', cfg.at);
@@ -607,28 +625,46 @@ async function processItem({ key, op, id }, c) {
   if (cfg === c) await dequeue(key);
 }
 
-/** Photo queue, in order, one photo at a time. Throws on the first error; the item stays queued. */
+/** Document round trip: upload local changes, adopt the merged result. Throws SyncError. */
+async function syncDoc() {
+  const r = await syncOnce({ cfg, local: doc, fetchFn });
+  if (cfg) await adopt(r.doc);                    // null: disconnected meanwhile
+}
+
+/**
+ * Photo queue, in order, one photo at a time. Throws on the first error; the item stays queued.
+ * First queues any local photo that is not queued yet (a failed queue write must not strand a photo).
+ * A document change during a long run is pushed between two photos, not after the last one.
+ */
 async function runQueue() {
   if (!persistent) return;
   run = { done: 0, total: 0 };
-  for (;;) {
-    const c = cfg;
-    if (!c) return;
-    const items = await queueAll();
-    queued = items.length;
-    if (!items.length) break;
-    run.total = run.done + items.length;
-    uploading = 1;
-    emit('sync');
-    try {
-      await processItem(items[0], c);
-    } finally {
-      uploading = 0;
+  try {
+    await enqueueLocalPhotos().catch(warn('coda foto: scansione non riuscita'));
+    for (;;) {
+      if (syncAgain && cfg) {
+        syncAgain = false;
+        await syncDoc();
+      }
+      const c = cfg;
+      if (!c) return;
+      const items = await queueAll();
+      queued = items.length;
+      if (!items.length) break;
+      run.total = run.done + items.length;
+      uploading = 1;
+      emit('sync');
+      try {
+        await processItem(items[0], c);
+      } finally {
+        uploading = 0;
+      }
+      run.done++;
+      emit('sync');
     }
-    run.done++;
-    emit('sync');
+  } finally {
+    run = { done: 0, total: 0 };                  // also after an error: no stale "3/12" in the status
   }
-  run = { done: 0, total: 0 };
 }
 
 /** GitHub rate limit: stay quiet until the limit resets, then resume. */
@@ -659,17 +695,18 @@ export async function runSync() {
     return;
   }
   syncing = true;
+  const c = cfg;
   setSync('syncing');
   try {
-    const r = await syncOnce({ cfg, local: doc, fetchFn });
+    await syncDoc();
     if (!cfg) return;                             // disconnected meanwhile
-    await adopt(r.doc);
     await runQueue();
     if (!cfg) return;
     cfg.at = Date.now();
     await storeCfg();
     setSync('idle', '', cfg.at);
   } catch (e) {
+    if (cfg !== c) return;                        // disconnected (or relinked) meanwhile: this failure is stale
     if (e.code === 'network') {
       setSync('offline', e.message);
     } else if (e.code === 'rate') {

@@ -3,6 +3,7 @@ import { readExif } from './exif.js';
 
 const FULL = { side: 1600, quality: 0.82 };
 const THUMB = { side: 320, quality: 0.7 };
+const EXIF_BYTES = 256 * 1024;                    // EXIF is in the first segments: no need to read the whole file
 
 const isJpeg = (b) => b.length > 2 && b[0] === 0xff && b[1] === 0xd8;
 
@@ -41,7 +42,7 @@ export async function processFile(file) {
   let buf;
   let bitmap;
   try {
-    buf = await file.arrayBuffer();
+    buf = await file.slice(0, EXIF_BYTES).arrayBuffer();
     // older engines reject the option value: retry plain (a real decode failure fails again)
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(file));
   } catch {
