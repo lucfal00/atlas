@@ -378,7 +378,9 @@ async function remoteBlob(id, kind) {
   const bytes = await limited(() => downloadPhoto({ cfg: c, id, kind, fetchFn }));
   if (!bytes) return null;
   const blob = new Blob([bytes], { type: 'image/jpeg' });
-  if (persistent && !doc.photos.some((x) => x.id === id && x.deleted)) await dbPut(kind, id, blob).catch(() => {});
+  if (persistent && !doc.photos.some((x) => x.id === id && x.deleted)) {
+    await dbPut(kind, id, blob).then(() => dbPut('meta', `up:${id}`, true)).catch(() => {});   // it exists on GitHub: never re-upload
+  }
   return blob;
 }
 
@@ -500,7 +502,7 @@ export async function importBackup(file) {
   if (!validateDoc(data)) throw new Error(MSG.badBackup);
   const r = mergeDocs(doc, data);
   doc = r.doc;
-  await purgeDeletedBlobs();                      // photos the backup marks as deleted
+  await purgeDeletedBlobs().catch(warn('pulizia foto eliminate non riuscita'));   // photos the backup marks as deleted
   await save();
   return { count: r.count };
 }
@@ -549,7 +551,7 @@ async function adopt(incoming) {
   const r = mergeDocs(doc, incoming);
   if (!r.count) return;
   doc = r.doc;
-  await purgeDeletedBlobs();
+  await purgeDeletedBlobs().catch(warn('pulizia foto eliminate non riuscita'));
   await persist();
 }
 
