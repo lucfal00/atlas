@@ -8,6 +8,13 @@ import {
 const API = 'https://api.github.com';
 const DOC = 'atlas.json';
 const MAX_RETRIES = 3; // after a 409: 1 attempt + 3 retries
+const RATE_WAIT = 60000; // ms to wait when GitHub limits us without saying until when
+// object: JSON for a file of 1–100 MB too (content empty, read through the blob); raw: the bytes themselves.
+const ACCEPT = {
+  json: 'application/vnd.github+json',
+  object: 'application/vnd.github.object+json',
+  raw: 'application/vnd.github.raw+json',
+};
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -43,7 +50,7 @@ function failure(res) {
   const limited = status === 429 || (status === 403 && (res.headers.get('x-ratelimit-remaining') === '0' || retry > 0));
   let e;
   if (status === 401) e = new SyncError('token', MSG.token);
-  else if (limited) e = new SyncError('rate', MSG.rate, reset > 0 ? reset * 1000 : retry > 0 ? Date.now() + retry * 1000 : undefined);
+  else if (limited) e = new SyncError('rate', MSG.rate, reset > 0 ? reset * 1000 : Date.now() + (retry > 0 ? retry * 1000 : RATE_WAIT));
   else if (status === 403) e = new SyncError('forbidden', MSG.forbidden);
   else if (status === 404) e = new SyncError('missing', MSG.missing);
   else if (status === 409) e = new SyncError('conflict', MSG.conflict);
@@ -64,8 +71,8 @@ async function readBody(res, kind) {
 const enPath = (path) => path.split('/').map(encodeURIComponent).join('/');
 
 export function makeRepoApi(token, fetchFn = (...a) => fetch(...a)) {
-  /** One request; `pass` lists the error statuses the caller handles itself. */
-  async function call(method, url, { body, raw = false, pass = [] } = {}) {
+  /** One request; `accept` is a key of ACCEPT, `pass` lists the error statuses the caller handles itself. */
+  async function call(method, url, { body, accept = 'json', pass = [] } = {}) {
     let res;
     try {
       res = await fetchFn(API + url, {
@@ -73,7 +80,7 @@ export function makeRepoApi(token, fetchFn = (...a) => fetch(...a)) {
         cache: 'no-store',
         headers: {
           Authorization: `Bearer ${token}`,
-          Accept: raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json',
+          Accept: ACCEPT[accept],
           'X-GitHub-Api-Version': '2022-11-28',
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
@@ -100,20 +107,20 @@ export function makeRepoApi(token, fetchFn = (...a) => fetch(...a)) {
       return (await readBody(await call('GET', repoUrl(owner, repo)), 'json')).size;
     },
 
-    /** {sha, bytes} or null. Files over 1 MB come without content: read through the blob (`metaOnly` skips that). */
+    /** {sha, bytes} or null. Files over 1 MB come without content: read through the blob. `metaOnly`: {sha, bytes: null}, no decoding. */
     async getFile(owner, repo, path, { metaOnly = false } = {}) {
-      const res = await call('GET', fileUrl(owner, repo, path), { pass: [404] });
+      const res = await call('GET', fileUrl(owner, repo, path), { accept: 'object', pass: [404] });
       if (res.status === 404) return null;
       const f = await readBody(res, 'json');
-      if (f.content && f.encoding === 'base64') return { sha: f.sha, bytes: fromB64(f.content) };
       if (metaOnly) return { sha: f.sha, bytes: null };
+      if (f.content && f.encoding === 'base64') return { sha: f.sha, bytes: fromB64(f.content) };
       const blob = await readBody(await call('GET', `${repoUrl(owner, repo)}/git/blobs/${f.sha}`), 'json');
       return { sha: f.sha, bytes: fromB64(blob.content) };
     },
 
     /** Raw file bytes or null. */
     async getRaw(owner, repo, path) {
-      const res = await call('GET', fileUrl(owner, repo, path), { raw: true, pass: [404] });
+      const res = await call('GET', fileUrl(owner, repo, path), { accept: 'raw', pass: [404] });
       if (res.status === 404) return null;
       return new Uint8Array(await readBody(res, 'arrayBuffer'));
     },
@@ -139,7 +146,7 @@ function needGzip() {
   if (!globalThis.CompressionStream || !globalThis.DecompressionStream) throw new SyncError('format', MSG.gzip);
 }
 
-/** Remote file bytes → validated document. Wrong key → password; anything else unreadable → format. */
+/** Remote file bytes → validated document. Wrong key → password; anything else unreadable or invalid → format. */
 async function openRemote(key, bytes, wrongKeyMsg) {
   let env;
   try {
@@ -150,8 +157,9 @@ async function openRemote(key, bytes, wrongKeyMsg) {
   let remote;
   try {
     remote = await unseal(key, env);
-  } catch {
-    throw new SyncError('password', wrongKeyMsg);
+  } catch (e) {
+    // AES-GCM failure = wrong key; bad base64, gunzip or JSON after a successful decryption = damaged data
+    throw e?.name === 'OperationError' ? new SyncError('password', wrongKeyMsg) : new SyncError('format', MSG.remote);
   }
   if (!validateDoc(remote)) throw new SyncError('format', MSG.remote);
   return remote;
@@ -161,8 +169,10 @@ async function openRemote(key, bytes, wrongKeyMsg) {
  * Read → decrypt → merge → PUT (with sha) only if the remote lacks something local.
  * A raced PUT (409, or 422 when creating) re-reads and re-merges with the document merged so far.
  * `pre` = file already read by the caller (null = absent); undefined = read it.
+ * `rekey(bytes, {cfg, key})` (connect only): key material for the file just read; a file created by another device
+ * meanwhile brings its own salt and iterations. Returns the {cfg, key} actually used.
  */
-async function reconcile({ api, cfg, key, local, pre, wrongKeyMsg }) {
+async function reconcile({ api, cfg, key, local, pre, wrongKeyMsg, rekey }) {
   if (!validateDoc(local)) throw new Error('Documento locale non valido');
   let doc = local;
   let count = 0;
@@ -170,17 +180,18 @@ async function reconcile({ api, cfg, key, local, pre, wrongKeyMsg }) {
     const file = attempt === 0 && pre !== undefined ? pre : await api.getFile(cfg.owner, cfg.repo, DOC);
     let behind = true;
     if (file) {
+      if (rekey) ({ cfg, key } = await rekey(file.bytes, { cfg, key }));
       const remote = await openRemote(key, file.bytes, wrongKeyMsg);
       const merged = mergeDocs(doc, remote);
       doc = merged.doc;
       count += merged.count;
       behind = mergeDocs(remote, doc).count > 0;
     }
-    if (!behind) return { doc, count, pushed: false };
+    if (!behind) return { doc, count, pushed: false, cfg };
     try {
       const text = await seal(key, fromB64(cfg.salt), cfg.iterations, doc);
       await api.putFile(cfg.owner, cfg.repo, DOC, enc.encode(text), file?.sha, 'Atlas sync');
-      return { doc, count, pushed: true };
+      return { doc, count, pushed: true, cfg };
     } catch (e) {
       const raced = e instanceof SyncError && (e.code === 'conflict' || (e.code === 'http' && e.status === 422 && !file));
       if (!raced) throw e;
@@ -189,18 +200,16 @@ async function reconcile({ api, cfg, key, local, pre, wrongKeyMsg }) {
   }
 }
 
-/** Link this device: join the existing atlas.json (merging data) or create it. Returns the cfg to store. */
-export async function connect({ token, repo, password, local, fetchFn }) {
-  needGzip();
-  const api = makeRepoApi(token, fetchFn);
-  const owner = await api.getUser();
-  await api.repoSize(owner, repo); // validates the repository (404 → missing)
-  const file = await api.getFile(owner, repo, DOC);
+/**
+ * {cfg, key} for `password` on atlas.json: the salt and iterations of the file `bytes` when there is one
+ * (an unreadable envelope → format), else a fresh salt. `prev` is reused when it already has those parameters.
+ */
+async function deriveCfg(base, password, bytes, prev) {
   let salt;
   let iterations;
-  if (file) {
+  if (bytes) {
     try {
-      const env = parseEnvelope(dec.decode(file.bytes));
+      const env = parseEnvelope(dec.decode(bytes));
       salt = fromB64(env.kdf.salt);
       iterations = env.kdf.iterations;
     } catch {
@@ -210,17 +219,34 @@ export async function connect({ token, repo, password, local, fetchFn }) {
     salt = randomBytes(16);
     iterations = ITERATIONS;
   }
+  const b64 = toB64(salt);
+  if (prev && prev.cfg.salt === b64 && prev.cfg.iterations === iterations) return prev;
   const key = await deriveKey(password, salt, iterations);
-  const cfg = { token, owner, repo, salt: toB64(salt), iterations, key: await exportKey(key) };
-  const { doc, count } = await reconcile({ api, cfg, key, local, pre: file, wrongKeyMsg: MSG.passwordConnect });
-  return { cfg, doc, count };
+  return { cfg: { ...base, salt: b64, iterations, key: await exportKey(key) }, key };
+}
+
+/** Link this device: join the existing atlas.json (merging data) or create it. Returns the cfg to store. */
+export async function connect({ token, repo, password, local, fetchFn }) {
+  needGzip();
+  const api = makeRepoApi(token, fetchFn);
+  const owner = await api.getUser();
+  await api.repoSize(owner, repo); // validates the repository (404 → missing)
+  const file = await api.getFile(owner, repo, DOC);
+  const base = { token, owner, repo };
+  const { cfg, key } = await deriveCfg(base, password, file?.bytes);
+  const r = await reconcile({
+    api, cfg, key, local, pre: file, wrongKeyMsg: MSG.passwordConnect,
+    rekey: (bytes, prev) => deriveCfg(base, password, bytes, prev),
+  });
+  return { cfg: r.cfg, doc: r.doc, count: r.count };
 }
 
 /** Pull, merge, push if the remote lacks newer local changes. The caller merges `doc` with its current state. */
 export async function syncOnce({ cfg, local, fetchFn }) {
   needGzip();
   const api = makeRepoApi(cfg.token, fetchFn);
-  return reconcile({ api, cfg, key: await importKey(cfg.key), local, wrongKeyMsg: MSG.passwordSync });
+  const { doc, count, pushed } = await reconcile({ api, cfg, key: await importKey(cfg.key), local, wrongKeyMsg: MSG.passwordSync });
+  return { doc, count, pushed };
 }
 
 // ---- photos ------------------------------------------------------------
@@ -230,15 +256,20 @@ function photoName(id, kind) {
   return `${id}.${kind}`;
 }
 
-/** Upload one encrypted file `photos/<id>.<kind>`; an existing file (422) counts as already uploaded. */
+/**
+ * Upload one encrypted file `photos/<id>.<kind>`. A 422 means "file already there" only if it really is:
+ * checked with a metadata read, otherwise the 422 surfaces. An error of that read surfaces as it is.
+ */
 export async function uploadPhoto({ cfg, id, kind, bytes, fetchFn }) {
   const name = photoName(id, kind);
   const api = makeRepoApi(cfg.token, fetchFn);
   const sealed = await sealBytes(await importKey(cfg.key), bytes, name);
+  const path = `photos/${name}`;
   try {
-    await api.putFile(cfg.owner, cfg.repo, `photos/${name}`, sealed, undefined, 'Add photo');
+    await api.putFile(cfg.owner, cfg.repo, path, sealed, undefined, 'Add photo');
   } catch (e) {
     if (!(e instanceof SyncError && e.code === 'http' && e.status === 422)) throw e;
+    if (!(await api.getFile(cfg.owner, cfg.repo, path, { metaOnly: true }))) throw e;
   }
 }
 

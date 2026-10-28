@@ -71,7 +71,7 @@ export function parseEnvelope(text) {
   return e;
 }
 
-/** Decrypt an envelope; throws (OperationError) on a wrong key. */
+/** Decrypt an envelope. Throws OperationError only when AES-GCM fails (wrong key); bad base64, gunzip or JSON throw other errors. */
 export async function unseal(key, env) {
   const packed = await subtle.decrypt({ name: 'AES-GCM', iv: fromB64(env.iv) }, key, fromB64(env.data));
   return JSON.parse(dec.decode(await gunzip(new Uint8Array(packed))));

@@ -22,6 +22,7 @@ const PASSWORD = 'correct horse battery';
 const RESET = 1893456000; // x-ratelimit-reset (seconds)
 const RAW = 'application/vnd.github.raw+json';
 const JSON_ACCEPT = 'application/vnd.github+json';
+const OBJECT = 'application/vnd.github.object+json';
 
 const place = (id, updatedAt, extra = {}) => ({ id, name: id, status: 'wish', deleted: false, updatedAt, ...extra });
 const docWith = (parts = {}) => ({ ...emptyDoc(), ...parts });
@@ -71,9 +72,11 @@ function makeGithub({ files = [], counter = 0, inlineLimit = 1e6, size = 42 } = 
     if (req.method === 'GET') {
       if (!cur) return notFound();
       if (req.headers.Accept === RAW) return new Response(cur.bytes, { status: 200 });
+      // like GitHub, a file of 1–100 MB is only served through the raw or the object media type
+      if (req.headers.Accept !== OBJECT) return reply(415, { message: 'Unsupported Media Type' });
       const big = cur.bytes.length > gh.inlineLimit;
       return reply(200, {
-        path: file, sha: cur.sha, size: cur.bytes.length,
+        type: 'file', path: file, sha: cur.sha, size: cur.bytes.length,
         encoding: big ? 'none' : 'base64', content: big ? '' : wrap(cur.bytes),
       });
     }
@@ -133,6 +136,16 @@ async function remoteWrite(gh, cfg, doc) {
 async function remoteDoc(gh, cfg) {
   const env = parseEnvelope(dec.decode(gh.repo.get('atlas.json').bytes));
   return unseal(await importKey(cfg.key), env);
+}
+
+/** atlas.json text sealed with the cfg key around arbitrary plaintext bytes (not through seal()); `patch` overrides envelope fields. */
+async function rawEnvelope(cfg, plain, patch = {}) {
+  const iv = randomBytes(12);
+  const data = await globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await importKey(cfg.key), plain);
+  return JSON.stringify({
+    app: 'atlas', v: 1, kdf: { name: 'PBKDF2-SHA256', iterations: cfg.iterations, salt: cfg.salt },
+    iv: toB64(iv), z: 'gzip', data: toB64(data), ...patch,
+  });
 }
 
 /** Repository + cfg of a device that has connected once (one PBKDF2 derivation for the whole file). */
@@ -212,6 +225,29 @@ test('envelope: unseal with another key throws; the key survives export/import',
   assert.equal(ITERATIONS, 310000);
 });
 
+test('envelope: unseal fails with OperationError on a wrong key, with another error on damaged data', async () => {
+  const salt = randomBytes(16);
+  const key = await deriveKey('uno', salt, 1000);
+  const env = parseEnvelope(await seal(key, salt, 1000, { x: 1 }));
+  await assert.rejects(unseal(await deriveKey('due', salt, 1000), env), { name: 'OperationError' });
+  const damaged = async (plain, patch) => {
+    const iv = randomBytes(12);
+    const data = await globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain);
+    return { ...env, iv: toB64(iv), data: toB64(data), ...patch };
+  };
+  const ok = await gzip(enc.encode('{"x":1}'));
+  const cases = [
+    ['not gzip', await damaged(enc.encode('plain text, not gzip'))],
+    ['gzip of non-JSON', await damaged(await gzip(enc.encode('{oops')))],
+    ['invalid base64 in data', await damaged(ok, { data: '***' })],
+    ['invalid base64 in iv', await damaged(ok, { iv: '***' })],
+  ];
+  assert.deepEqual(await unseal(key, await damaged(ok)), { x: 1 }, 'the helper builds a valid envelope');
+  for (const [name, e] of cases) {
+    await assert.rejects(unseal(key, e), (err) => err.name !== 'OperationError', name);
+  }
+});
+
 test('envelope: parseEnvelope rejects other apps, other compression, bad shapes and non-JSON', async () => {
   const salt = randomBytes(16);
   const key = await deriveKey('pw', salt, 1000);
@@ -278,7 +314,10 @@ test('api: every request carries the auth, version and no-store headers', async 
     assert.equal(c.cache, 'no-store');
   }
   assert.equal(gh.calls[0].headers.Accept, JSON_ACCEPT);
+  assert.equal(gh.calls[1].headers.Accept, JSON_ACCEPT);
+  assert.equal(gh.calls[2].headers.Accept, OBJECT, 'getFile: object media type, works for 1–100 MB files');
   assert.equal(gh.calls[3].headers.Accept, RAW);
+  assert.equal(gh.calls[4].headers.Accept, JSON_ACCEPT);
 });
 
 test('api: getFile decodes wrapped base64, returns null on 404, encodes each path segment', async () => {
@@ -304,6 +343,21 @@ test('api: content missing (file > 1 MB) → read through git/blobs/{sha}', asyn
   assert.equal(f.sha, sha);
   assert.deepEqual(f.bytes, bytes);
   assert.equal(gh.reqs('GET', `/git/blobs/${sha}`).length, 1);
+});
+
+test('api: getFile metaOnly → {sha, bytes: null} without decoding the content or fetching the blob', async () => {
+  const gh = makeGithub({ inlineLimit: 100 });
+  const small = gh.put('small.bin', randomBytes(50));
+  const big = gh.put('big.bin', randomBytes(5000));
+  const api = makeRepoApi(TOKEN, gh.fetch);
+  assert.deepEqual(await api.getFile(OWNER, REPO, 'small.bin', { metaOnly: true }), { sha: small, bytes: null });
+  assert.deepEqual(await api.getFile(OWNER, REPO, 'big.bin', { metaOnly: true }), { sha: big, bytes: null });
+  assert.equal(await api.getFile(OWNER, REPO, 'nope.bin', { metaOnly: true }), null);
+  assert.equal(gh.reqs('GET', '/git/blobs/' + big).length, 0, 'the blob is never fetched');
+  // content that is not even base64 is never decoded
+  gh.hook = (req) => (req.path.endsWith('/contents/small.bin')
+    ? reply(200, { sha: small, encoding: 'base64', content: '***not base64***' }) : undefined);
+  assert.deepEqual(await api.getFile(OWNER, REPO, 'small.bin', { metaOnly: true }), { sha: small, bytes: null });
 });
 
 test('api: putFile body and result, deleteFile, repoSize', async () => {
@@ -380,11 +434,37 @@ test('api: secondary rate limit (403 or 429 with retry-after) → rate with rese
   }
 });
 
-test('api: a body that cannot be read, or is not JSON → network', async () => {
+test('api: rate limit with neither x-ratelimit-reset nor retry-after → resetAt = now + 60 s', async () => {
+  const gh = makeGithub();
+  const api = makeRepoApi(TOKEN, gh.fetch);
+  const cases = [reply(429, {}), reply(403, {}, { 'x-ratelimit-remaining': '0' })];
+  for (const answer of cases) {
+    gh.hook = () => answer.clone();
+    const t0 = Date.now();
+    await assert.rejects(api.getUser(), (e) => {
+      assert.equal(e.code, 'rate');
+      assert.ok(Number.isFinite(e.resetAt), 'resetAt is set');
+      assert.ok(e.resetAt >= t0 + 60000 && e.resetAt <= Date.now() + 60000, `resetAt ${e.resetAt - t0} ms ahead`);
+      return true;
+    });
+  }
+});
+
+test('api: a 200 body that is not JSON → network', async () => {
   const gh = makeGithub();
   const api = makeRepoApi(TOKEN, gh.fetch);
   gh.hook = () => new Response('<html>captive portal</html>', { status: 200 });
-  await rejectsSync(api.getUser(), 'network');
+  await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
+  await rejectsSync(api.getFile(OWNER, REPO, 'atlas.json'), 'network');
+});
+
+test('api: a body that errors while it is read (connection dropped) → network', async () => {
+  const gh = makeGithub();
+  gh.put('atlas.json', randomBytes(10));
+  const api = makeRepoApi(TOKEN, gh.fetch);
+  gh.hook = () => new Response(new ReadableStream({ start: (c) => c.error(new TypeError('terminated')) }), { status: 200 });
+  await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
+  await rejectsSync(api.getRaw(OWNER, REPO, 'atlas.json'), 'network');
 });
 
 test('api: fetch that throws → network', async () => {
@@ -450,6 +530,59 @@ test('connect: wrong password → password error, nothing written', async () => 
     'password', 'Password errata',
   );
   assert.equal(gh.calls.filter((c) => c.method !== 'GET').length, 0);
+});
+
+test('connect: another device creates atlas.json first (422) → adopts its salt and iterations, not a false "Password errata"', async () => {
+  const gh = makeGithub();
+  // the other device: same password, different salt, cheaper KDF so that the test stays fast
+  const otherSalt = randomBytes(16);
+  const otherKey = await deriveKey(PASSWORD, otherSalt, 1000);
+  const otherText = await seal(otherKey, otherSalt, 1000, docA);
+  let otherSha;
+  gh.hook = (req) => {
+    if (req.method === 'PUT' && req.path.endsWith('/atlas.json') && otherSha === undefined) {
+      otherSha = gh.put('atlas.json', enc.encode(otherText)); // between our read (absent) and our PUT
+    }
+    return undefined;
+  };
+
+  const r = await connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch });
+  assert.equal(r.cfg.salt, toB64(otherSalt), 'cfg carries the remote salt');
+  assert.equal(r.cfg.iterations, 1000, 'cfg carries the remote iterations');
+  assert.equal(r.cfg.key, await exportKey(otherKey));
+  assert.deepEqual(ids(r.doc), ['l_a', 'l_b']);
+  assert.equal(r.count, 1);
+
+  const puts = gh.reqs('PUT', '/contents/atlas.json');
+  assert.equal(puts.length, 2);
+  assert.ok(!('sha' in puts[0].body), 'first attempt creates the file');
+  assert.equal(puts[1].body.sha, otherSha, 'the retry updates the other device\'s file');
+  const env = parseEnvelope(dec.decode(gh.repo.get('atlas.json').bytes));
+  assert.equal(env.kdf.salt, toB64(otherSalt));
+  assert.equal(env.kdf.iterations, 1000);
+  assert.deepEqual(ids(await remoteDoc(gh, r.cfg)), ['l_a', 'l_b']);
+  // the returned cfg is coherent: a later sync with it needs nothing
+  const again = await syncOnce({ cfg: r.cfg, local: r.doc, fetchFn: gh.fetch });
+  assert.equal(again.pushed, false);
+});
+
+test('connect: wrong password still → password error when the file shows up during the race', async () => {
+  const gh = makeGithub();
+  const otherSalt = randomBytes(16);
+  const otherKey = await deriveKey('un\'altra password', otherSalt, 1000);
+  const text = await seal(otherKey, otherSalt, 1000, docA);
+  let created = false;
+  gh.hook = (req) => {
+    if (req.method === 'PUT' && req.path.endsWith('/atlas.json') && !created) {
+      created = true;
+      gh.put('atlas.json', enc.encode(text));
+    }
+    return undefined;
+  };
+  await rejectsSync(
+    connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch }),
+    'password', 'Password errata',
+  );
 });
 
 test('connect: unknown repository → missing; bad token → token', async () => {
@@ -565,6 +698,40 @@ test('syncOnce: remote that decrypts to an invalid document, or is not an envelo
   await rejectsSync(syncOnce({ cfg, local: docA, fetchFn: gh.fetch }), 'format', 'Dati remoti non validi');
 });
 
+test('syncOnce: right key but damaged payload (not gzip, not JSON, bad base64) → format, not password', async () => {
+  const { gh, cfg } = await fresh();
+  const goodZ = await gzip(enc.encode(JSON.stringify(docA)));
+  const damaged = [
+    ['not gzip', await rawEnvelope(cfg, enc.encode('plain text, not gzip'))],
+    ['gzip of non-JSON', await rawEnvelope(cfg, await gzip(enc.encode('{oops')))],
+    ['bad base64 in data', await rawEnvelope(cfg, goodZ, { data: '***' })],
+    ['bad base64 in iv', await rawEnvelope(cfg, goodZ, { iv: '***' })],
+  ];
+  assert.ok(validateDoc(JSON.parse(dec.decode(await gunzip(goodZ)))), 'control: the undamaged payload is a valid document');
+  for (const [name, text] of damaged) {
+    gh.put('atlas.json', enc.encode(text));
+    await assert.rejects(
+      syncOnce({ cfg, local: docA, fetchFn: gh.fetch }),
+      (e) => e instanceof SyncError && e.code === 'format' && e.message === 'Dati remoti non validi',
+      name,
+    );
+  }
+  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
+  // the same file, undamaged, is read fine
+  gh.put('atlas.json', enc.encode(await rawEnvelope(cfg, goodZ)));
+  assert.deepEqual((await syncOnce({ cfg, local: docA, fetchFn: gh.fetch })).doc, docA);
+});
+
+test('connect: right password but damaged payload → format, not "Password errata"', async () => {
+  const { gh, cfg } = await fresh();
+  gh.put('atlas.json', enc.encode(await rawEnvelope(cfg, enc.encode('plain text, not gzip'))));
+  await rejectsSync(
+    connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch }),
+    'format', 'Dati remoti non validi',
+  );
+  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
+});
+
 test('syncOnce: PUT 409 → reread, merge with what was merged so far, retry', async () => {
   const { gh, cfg } = await fresh();
   let raced = false;
@@ -661,13 +828,43 @@ test('photos: full kind uses its own path and AAD', async () => {
   assert.deepEqual(await downloadPhoto({ cfg, id: 'f_ab12cd', kind: 'full', fetchFn: gh.fetch }), jpeg);
 });
 
-test('photos: uploading an existing file (422) is not an error and leaves it untouched', async () => {
+test('photos: 422 because the file already exists → verified by a metadata read, not an error, file untouched', async () => {
   const { gh, cfg } = await fresh();
   await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(100), fetchFn: gh.fetch });
   const before = gh.repo.get('photos/f_ab12cd.thumb');
+  gh.calls.length = 0;
   await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(100), fetchFn: gh.fetch });
-  assert.equal(gh.reqs('PUT', '/contents/photos/f_ab12cd.thumb').length, 2);
+  assert.equal(gh.reqs('PUT', '/contents/photos/f_ab12cd.thumb').length, 1);
+  assert.equal(gh.reqs('GET', '/contents/photos/f_ab12cd.thumb').length, 1, 'the 422 is checked with a read');
   assert.equal(gh.repo.get('photos/f_ab12cd.thumb').sha, before.sha);
+  assert.equal(gh.calls.filter((c) => c.path.includes('/git/blobs/')).length, 0, 'metadata only, no blob download');
+});
+
+test('photos: 422 although the file does not exist → the original 422 error surfaces', async () => {
+  const { gh, cfg } = await fresh();
+  gh.hook = (req) => (req.method === 'PUT' ? reply(422, { message: 'Invalid request.' }) : undefined);
+  await assert.rejects(uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(100), fetchFn: gh.fetch }), (e) => {
+    assert.ok(e instanceof SyncError);
+    assert.equal(e.code, 'http');
+    assert.equal(e.status, 422);
+    assert.equal(e.message, 'Errore GitHub 422');
+    return true;
+  });
+  assert.equal(gh.reqs('GET', '/contents/photos/f_ab12cd.thumb').length, 1, 'the 422 was checked with a read');
+  assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
+});
+
+test('photos: 422 whose check cannot be completed (network) → that error surfaces', async () => {
+  const { gh, cfg } = await fresh();
+  gh.hook = (req) => {
+    if (req.method === 'PUT') return reply(422, { message: 'Invalid request.' });
+    if (req.method === 'GET') throw new TypeError('fetch failed');
+    return undefined;
+  };
+  await rejectsSync(
+    uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(10), fetchFn: gh.fetch }),
+    'network', 'Rete non disponibile',
+  );
 });
 
 test('photos: other upload errors surface (network, 403 rate limit)', async () => {
@@ -705,13 +902,49 @@ test('photos: deletePhoto removes thumb and full with their sha; absent files ar
   assert.equal(gh.calls.filter((c) => c.method === 'GET').length, 2);
 });
 
-test('photos: deletePhoto with only one kind present, and with DELETE answering 404', async () => {
+test('photos: deletePhoto of a full photo over 1 MB (no content in the answer) never downloads it', async () => {
   const { gh, cfg } = await fresh();
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(50), fetchFn: gh.fetch });
+  const big = new Uint8Array(1100000);
+  for (let i = 0; i < big.length; i += 65536) globalThis.crypto.getRandomValues(big.subarray(i, i + 65536));
+  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(300), fetchFn: gh.fetch });
+  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'full', bytes: big, fetchFn: gh.fetch });
+  const full = gh.repo.get('photos/f_ab12cd.full');
+  const shas = ['thumb', 'full'].map((k) => gh.repo.get(`photos/f_ab12cd.${k}`).sha);
+  assert.ok(full.bytes.length > 1e6, 'the stored file is over 1 MB, so GitHub sends no content for it');
+
+  gh.calls.length = 0;
   await deletePhoto({ cfg, id: 'f_ab12cd', fetchFn: gh.fetch });
   assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
+  assert.equal(gh.repo.has('photos/f_ab12cd.full'), false);
+  assert.deepEqual(gh.calls.filter((c) => c.method === 'DELETE').map((c) => c.body.sha), shas);
+  assert.equal(gh.calls.filter((c) => c.path.includes('/git/blobs/')).length, 0, 'no blob downloaded');
+  assert.equal(gh.calls.filter((c) => c.headers.Accept === RAW).length, 0, 'no raw download either');
+});
 
+test('photos: deletePhoto with only one kind present: the missing one gets no DELETE', async () => {
+  const { gh, cfg } = await fresh();
+  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(50), fetchFn: gh.fetch });
+  const sha = gh.repo.get('photos/f_ab12cd.thumb').sha;
+  gh.calls.length = 0;
+  await deletePhoto({ cfg, id: 'f_ab12cd', fetchFn: gh.fetch });
+  assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
+  const deletes = gh.calls.filter((c) => c.method === 'DELETE');
+  assert.equal(deletes.length, 1);
+  assert.ok(deletes[0].path.endsWith('/photos/f_ab12cd.thumb'));
+  assert.equal(deletes[0].body.sha, sha);
+});
+
+test('photos: deletePhoto when another device deletes the file between the read and the DELETE (404) → resolves, file absent', async () => {
+  const { gh, cfg } = await fresh();
   await uploadPhoto({ cfg, id: 'f_ef34gh', kind: 'full', bytes: randomBytes(50), fetchFn: gh.fetch });
-  gh.hook = (req) => (req.method === 'DELETE' ? reply(404, { message: 'Not Found' }) : undefined);
+  gh.hook = (req) => {
+    if (req.method === 'DELETE') gh.repo.delete('photos/f_ef34gh.full'); // the fake then answers 404
+    return undefined;
+  };
+  gh.calls.length = 0;
   await deletePhoto({ cfg, id: 'f_ef34gh', fetchFn: gh.fetch });
+  const deletes = gh.calls.filter((c) => c.method === 'DELETE');
+  assert.equal(deletes.length, 1, 'the DELETE was sent and answered 404');
+  assert.ok(deletes[0].path.endsWith('/photos/f_ef34gh.full'));
+  assert.equal(gh.repo.has('photos/f_ef34gh.full'), false);
 });
