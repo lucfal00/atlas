@@ -31,7 +31,7 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#stats`, `#impostazioni`, `#luogo/
 
 - Selettore **Mondo | Italia**; in Italia selettore **Regioni | Province**.
 - Aree colorate per stato (§6.3): visitato, in programma, da visitare, mai.
-- Luoghi come punti: pieno = visitato, ambra = in programma, anello = da visitare. Raggruppamento (§6.6): pallino con numero; tocco → zoom ×2 centrato.
+- Luoghi come punti: pieno = visitato, blu = in programma, anello = da visitare. Raggruppamento (§6.6): pallino con numero; tocco → zoom ×2 centrato.
 - Gesti: trascinamento, pizzico con due dita, rotella e trascinamento su PC, doppio tocco = zoom ×2. Zoom 1×–40× (Mondo), 1×–20× (Italia).
 - Tocco su un'area → foglio: nome, stato, segno manuale (**Segna come visitato** / **Togli segno**), luoghi e viaggi nell'area, **Aggiungi luogo qui**.
 - Tocco su un punto → anteprima del luogo (foto, nome, stato) → apre `#luogo/<id>`.
@@ -276,9 +276,10 @@ tests/                  logic, geo, exif, merge, sync (.test.js, node --test)
 - `logic.js`, `geo.js`, `exif.js`, `merge.js` non accedono a DOM, rete né storage.
 - `db.js` è l'unico modulo che usa IndexedDB; `store.js` l'unico che modifica il documento e notifica le viste con `change`.
 - Viste: `render(container, state)`; la mappa aggiorna solo i livelli cambiati.
-- **Aspetto**: token e componenti di Habits; `--accent: #0d9488` (grafici, aree visitate), `--accent-strong: #0f766e` per pulsanti pieni con testo bianco (5,5:1);
-  tema scuro `#2dd4bf` con `--on-accent: #0f1117`. Mappa: visitato `--accent`, in programma `#f59e0b`, da visitare `--accent` al 25 %, mai `--empty`.
-  Icona: riquadro con sfumatura verde acqua → blu, globo e spillo color crema `#fffaf4`, stessa geometria delle altre due.
+- **Aspetto** (terracotta, scelta dall'utente il 2026-10-28): token e componenti di Habits; `--accent: #c2410c` (grafici, aree visitate), `--accent-strong: #9a3412` per pulsanti pieni con testo bianco (7,3:1);
+  tema scuro `#f0a07a` con `--on-accent: #0f1117`. Mappa: visitato `--accent`, in programma blu `#2563eb` (scuro `#60a5fa`), da visitare `--accent` al 25 %, mai `--empty`.
+  Icona: riquadro `rx 23` con sfumatura terracotta `#f0a07a → #b8461f`; dentro, in crema `#fffaf4`, il planisfero Equal Earth
+  (senza Antartide) con alcuni paesi pieni (visitati) e gli altri al 38 % come le barre di Habits, e uno spillo a goccia crema con alone `#d4683d` su Napoli.
 - Offline: pagine dalla rete (timeout 3 s, poi cache); altri file dalla cache con aggiornamento in background; precache con `cache: 'reload'`.
 
 ## 11. Convivenza con Habits e Fitness
