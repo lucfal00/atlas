@@ -1,8 +1,12 @@
 // Entry point: hash router, theme, banner, sync wiring, service worker.
-// A view is a module exporting render(el, ctx); ctx = { doc, params, query, today, refresh }.
+// A view is a module exporting render(el, ctx); ctx = { doc, params, query, today, refresh, stale }.
 // render may return { update?(ctx), destroy?() } (or a Promise of it):
 //   store change / sync status -> update(freshCtx) if present, else a full re-render;
 //   route change or re-render -> destroy() of the view being replaced.
+// `el` is the single <main>, emptied and reused by every render, so a view must attach its handlers with
+// el.onclick = ... / onchange / oninput / onsubmit (reset before each render), never el.addEventListener
+// (listeners would pile up across routes). An async view checks ctx.stale() after each await and stops
+// touching `el` once it returns true (the route changed or the view was re-rendered in the meantime).
 import * as store from './store.js';
 import { todayKey } from './logic.js';
 import { initTooltips, hideTip } from './charts.js';
@@ -63,8 +67,10 @@ function route() {
   const q = hash.indexOf('?');
   const query = new URLSearchParams(q < 0 ? '' : hash.slice(q + 1));
   const [raw = '', ...rest] = (q < 0 ? hash : hash.slice(0, q)).split('/');
-  const params = rest.map(decode);
-  const [name, view] = pick(raw, params);
+  if (rest.length && rest[rest.length - 1] === '') rest.pop();   // trailing slash: #luogo/abc/ -> ['abc']
+  const segs = rest.map(decode);
+  const [name, view] = pick(raw, segs);
+  const params = name === raw ? segs : [];                          // a fallback view gets no params
   const origin = name === 'foto' ? ['place', 'trip', 'day'].find((k) => query.has(k)) : null;
   return {
     name, view, params, query,
@@ -73,12 +79,19 @@ function route() {
   };
 }
 
-const makeCtx = (r) => ({ doc: store.getDoc(), params: r.params, query: r.query, today: todayKey(), refresh: render });
+/** `stale()` turns true once this render is superseded (route change, re-render or destroy). */
+const makeCtx = (r, mine = ticket) => ({
+  doc: store.getDoc(), params: r.params, query: r.query, today: todayKey(), refresh: render, stale: () => mine !== ticket,
+});
+
+/** --banner-h = height of the visible banner (0 when hidden): full-bleed screens subtract it. */
+const syncBannerHeight = () => document.documentElement.style.setProperty('--banner-h', `${banner.offsetHeight}px`);
 
 function updateBanner() {
   const notice = store.getNotice();
   banner.hidden = !notice;
   banner.querySelector('span').textContent = notice;
+  syncBannerHeight();
 }
 
 /** Theme and banner follow the document on every change, whichever way the view redraws. */
@@ -126,12 +139,22 @@ function render() {
   shownDay = todayKey();
   const mine = ticket;
   try {
-    const out = r.view.render(main, makeCtx(r));
+    const out = r.view.render(main, makeCtx(r, mine));
     if (out && typeof out.then === 'function') {
       out.then((o) => {
-        if (mine === ticket) active = o ?? null;
-        else o?.destroy?.();                        // navigated away while it was loading
-      }, (e) => { if (mine === ticket) fail(e); });
+        if (mine === ticket) {
+          active = o ?? null;
+          return;
+        }
+        try {
+          o?.destroy?.();                           // navigated away while it was loading
+        } catch (e) {
+          console.error(e);
+        }
+      }, (e) => {
+        if (mine === ticket) fail(e);               // fail() logs
+        else console.error(e);                      // superseded: nothing to show, but never swallowed
+      });
     } else {
       active = out ?? null;
     }
@@ -148,8 +171,15 @@ function render() {
 /** A change the view may absorb itself (map layers, forms that ignore background changes); else redraw. */
 function refreshActive() {
   if (active?.update) {
+    const mine = ticket;
     try {
-      active.update(makeCtx(cur));
+      const out = active.update(makeCtx(cur, mine));
+      if (out && typeof out.then === 'function') {
+        out.then(undefined, (e) => {                // async update failed: full re-render, unless already superseded
+          console.error(e);
+          if (mine === ticket) render();
+        });
+      }
       return;
     } catch (e) {
       console.error(e);
@@ -174,6 +204,7 @@ store.onSync(() => {
   if (cur?.name === 'impostazioni') refreshActive();
 });
 banner.querySelector('button').onclick = store.clearNotice;
+if (typeof ResizeObserver === 'function') new ResizeObserver(syncBannerHeight).observe(banner);   // text wrap, rotation
 addEventListener('hashchange', render);
 addEventListener('online', () => store.runSync());
 document.addEventListener('visibilitychange', () => {

@@ -19,6 +19,7 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 6px 20px rgba(16, 24, 40, .06);
   --radius: 18px;
   --tabbar-h: 63px;                  /* tab bar without the safe-area inset */
+  --banner-h: 0px;                   /* height of the visible banner (set by app.js) */
   --map-sea: #e3eef1;
   /* Map: resolved on :root, so they follow the theme's --accent / --empty. */
   --map-visited: var(--accent);
@@ -112,7 +113,16 @@ button { cursor: pointer; }
 .card.media .body { padding: 12px 16px 14px; }
 .card.media .body b { display: block; }
 .cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--empty); }
-details.card summary { cursor: pointer; font-weight: 600; min-height: 28px; }
+details.card summary {
+  display: flex; align-items: center; gap: 12px; min-height: 44px;   /* touch target; flex hides the native marker */
+  cursor: pointer; font-weight: 600; list-style: none;
+}
+details.card summary::-webkit-details-marker { display: none; }
+details.card summary::after {
+  content: ''; flex: none; margin-left: auto; width: 8px; height: 8px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .2s;
+}
+details.card[open] summary::after { transform: rotate(-135deg); }
 details.card[open] summary { margin-bottom: 4px; }
 
 /* ---- Header --------------------------------------------------------- */
@@ -153,6 +163,11 @@ select, textarea {
 }
 textarea { min-height: 96px; resize: vertical; }
 input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin: 0; accent-color: var(--accent-strong); }
+/* Standard checkbox / radio / switch pattern: the control sits in a `label.check` row (control + text), so the whole
+   row is the touch target (>= 44 px) and the 22 px control itself never has to be hit. Never use a bare input. */
+.check { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
+.check > span { min-width: 0; }
+.todo li > .check { flex: 1; }
 
 /* ---- Banner / tooltip / toast -------------------------------------- */
 .banner {
@@ -163,6 +178,7 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 }
 .banner span { flex: 1; align-self: center; }
 .banner button { border: 0; background: none; font-size: 1.3rem; line-height: 1; width: 44px; height: 44px; margin: -12px -12px -12px 0; }
+.banner:not([hidden]) + main { padding-top: 12px; }           /* the banner already clears the top safe-area inset */
 .notice { background: var(--warn-bg); color: var(--warn-text); border-color: transparent; display: flex; gap: 12px; align-items: center; }
 .notice p { margin: 0; flex: 1; font-size: .9rem; }
 
@@ -175,7 +191,7 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 .toast {
   position: fixed; left: 50%; z-index: 60;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 14px);
-  max-width: min(90vw, 420px); padding: 10px 16px; border-radius: 12px;
+  width: max-content; max-width: min(calc(100vw - 32px), 420px); padding: 10px 16px; border-radius: 12px;
   background: var(--text); color: var(--bg);
   font-size: .9rem; font-weight: 600; text-align: center;
   opacity: 0; visibility: hidden; pointer-events: none;
@@ -252,7 +268,7 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 .months-row .pick input:checked + span { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
 .seg .pick input:focus-visible + span, .months-row .pick input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .stars { display: flex; gap: 2px; }
-.stars button { width: 44px; height: 44px; border: 0; background: none; font-size: 1.7rem; line-height: 1; color: var(--track); }
+.stars button { width: 44px; height: 44px; border: 0; background: none; font-size: 1.7rem; line-height: 1; color: var(--muted); }   /* unfilled: >= 3:1 on the card, both themes */
 .stars button.on { color: var(--star); }
 .todo { list-style: none; margin: 0; padding: 0; }
 .todo li { display: flex; align-items: center; gap: 12px; min-height: 44px; }
@@ -270,7 +286,7 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 .chip.static { cursor: default; min-height: 32px; }
 .chip small { color: inherit; opacity: .7; }
 .switch { position: relative; width: 44px; height: 26px; flex: none; }
-.switch input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+.switch input { position: absolute; top: -9px; left: 0; width: 100%; height: 44px; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }   /* hit area 44 x 44 around the 44 x 26 look */
 .switch span { position: absolute; inset: 0; border-radius: 13px; background: var(--track); transition: background .2s; }
 .switch span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
   background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s; }
@@ -354,9 +370,10 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 @supports (height: 100dvh) { .map-wrap { height: calc(100dvh - var(--tabbar-h) - env(safe-area-inset-bottom) - 120px); } }
 .map-wrap svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
 .map-wrap.mini { height: 220px; min-height: 0; }
-.map-wrap.full { height: calc(100vh - var(--tabbar-h) - env(safe-area-inset-bottom)); border: 0; border-radius: 0; }
-@supports (height: 100dvh) { .map-wrap.full { height: calc(100dvh - var(--tabbar-h) - env(safe-area-inset-bottom)); } }
+.map-wrap.full { height: calc(100vh - var(--tabbar-h) - env(safe-area-inset-bottom) - var(--banner-h)); border: 0; border-radius: 0; }
+@supports (height: 100dvh) { .map-wrap.full { height: calc(100dvh - var(--tabbar-h) - env(safe-area-inset-bottom) - var(--banner-h)); } }
 main:has(> .map-wrap.full) { max-width: none; padding: 0; }
+.banner:not([hidden]) + main .map-bar { top: 8px; }            /* inset already consumed by the banner */
 .map-bar {
   position: absolute; z-index: 2; top: calc(env(safe-area-inset-top) + 8px); left: 8px; right: 8px;
   display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none;
@@ -374,6 +391,7 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
   background: rgba(0, 0, 0, .45); opacity: 0; transition: opacity .2s;
 }
 .sheet-backdrop.open { opacity: 1; }
+.sheet-backdrop:not(.open) { pointer-events: none; }          /* a closing sheet no longer swallows taps */
 .sheet {
   position: relative; width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column;
   background: var(--card); color: var(--text); border-radius: 20px 20px 0 0; outline: none;

@@ -109,22 +109,27 @@ export function openSheet(content, { onClose } = {}) {
   let closed = false;
   const api = {
     el,
-    close(immediate = false) {
+    close(immediate = false) {                        // a click event passed as `immediate` counts as false
       if (closed) return;
       closed = true;
       if (current === api) current = null;
       document.removeEventListener('keydown', onKey, true);
       document.body.classList.remove('modal-open');
       backdrop.classList.remove('open');
-      if (immediate) backdrop.remove();
+      if (immediate === true) backdrop.remove();
       else setTimeout(() => backdrop.remove(), 250);
       if (opener && document.contains(opener)) opener.focus?.({ preventScroll: true });
-      onClose?.();
+      try {
+        onClose?.();
+      } catch (err) {
+        console.error(err);
+      }
     },
   };
   function onKey(e) {
     if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();                            // the sheet takes the key: nothing underneath also reacts to Esc
       api.close();
     } else if (e.key === 'Tab') {                     // keep focus inside the sheet
       const items = [...panel.querySelectorAll(FOCUSABLE)];
@@ -134,7 +139,13 @@ export function openSheet(content, { onClose } = {}) {
       else if (!e.shiftKey && (at === -1 || at === items.length - 1)) { e.preventDefault(); items[0].focus(); }
     }
   }
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) api.close(); });
+  let downOnBackdrop = false;                         // a drag that starts in the sheet must not close it
+  backdrop.addEventListener('pointerdown', (e) => { downOnBackdrop = e.target === backdrop; });
+  backdrop.addEventListener('click', (e) => {
+    const tap = downOnBackdrop && e.target === backdrop;
+    downOnBackdrop = false;
+    if (tap) api.close();
+  });
   x.addEventListener('click', () => api.close());
   document.addEventListener('keydown', onKey, true);
   document.body.append(backdrop);

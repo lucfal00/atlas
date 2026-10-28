@@ -30,14 +30,20 @@ self.addEventListener('activate', (e) => {
 
 async function page(req) {
   const cache = await caches.open(CACHE);
+  const cached = async () => (await cache.match(req, { ignoreSearch: true })) || (await cache.match('./'));
   try {
     const timeout = new Promise((_, reject) => { setTimeout(reject, PAGE_TIMEOUT_MS); });
     // By URL: a navigate-mode Request cannot be re-issued with options.
     const res = await Promise.race([fetch(req.url, { cache: 'no-cache' }), timeout]);
-    if (res.ok) await cache.put('./', res.clone());
+    if (res.status >= 500) return (await cached()) || res;     // server error: the cached app beats an error page
+    if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
+      try {
+        await cache.put('./', res.clone());
+      } catch { /* quota or similar: the good network response is still returned */ }
+    }
     return res;
   } catch {
-    return (await cache.match(req, { ignoreSearch: true })) || (await cache.match('./')) || Response.error();
+    return (await cached()) || Response.error();
   }
 }
 
@@ -50,7 +56,7 @@ self.addEventListener('fetch', (e) => {
   }
   e.respondWith(caches.open(CACHE).then(async (cache) => {
     const hit = await cache.match(req, { ignoreSearch: true });
-    const net = fetch(req)
+    const net = fetch(req, { cache: 'no-cache' })      // revalidate: GitHub Pages' max-age=600 would refresh from the HTTP cache
       .then((res) => {
         if (res.ok) cache.put(req, res.clone());
         return res;
