@@ -414,3 +414,63 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
   .stats-grid > .card { margin: 0; }
   .stats-grid > .st-wide { grid-column: 1 / -1; }
 }
+
+/* ---- Atlas map: js/map.js (svg layers, points) and js/views/map.js (overlays, sheets) -------- */
+/* Wish areas as an opaque tint: a translucent fill would darken under its own same-colour stroke. */
+:root { --map-wish-solid: color-mix(in srgb, var(--accent) 25%, var(--map-never)); }
+.map-svg { cursor: grab; -webkit-touch-callout: none; }
+.map-svg.drag { cursor: grabbing; }
+.map-svg.static { cursor: default; pointer-events: none; touch-action: auto; }
+.map-svg path { fill-rule: evenodd; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.map-svg .ctx { pointer-events: none; }
+.map-svg .ctx path { fill: var(--map-never); fill-opacity: .4; stroke: var(--line); stroke-width: .6; }
+.map-svg .area { fill: var(--map-never); stroke: var(--line); stroke-width: .6; }
+.map-svg .st-visited { fill: var(--map-visited); }
+.map-svg .st-planned { fill: var(--map-planned); }
+.map-svg .st-wish { fill: var(--map-wish-solid); }
+/* Regions level: provinces take their region's colour as border too, so no internal border shows. */
+.map-svg .lvl-regions .area { stroke: var(--map-never); stroke-width: .8; }
+.map-svg .lvl-regions .area.st-visited { stroke: var(--map-visited); }
+.map-svg .lvl-regions .area.st-planned { stroke: var(--map-planned); }
+.map-svg .lvl-regions .area.st-wish { stroke: var(--map-wish-solid); }
+.map-svg .route { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
+.map-svg .home { pointer-events: none; }
+.map-svg .home rect { fill: var(--card); stroke: var(--accent-strong); stroke-width: 2; }
+.map-svg .pt { cursor: pointer; }
+.map-svg .pt .hit { fill: transparent; }
+.map-svg .pt .dot { stroke: var(--card); stroke-width: 1.5; }
+.map-svg .pt .dot.st-wish { fill: var(--card); stroke: var(--accent); stroke-width: 2.5; }
+.map-svg .pt text { fill: var(--on-accent); font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.map-svg .pt .st-wish + text { fill: var(--accent-strong); }
+
+.map-msg {
+  position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-content: center; justify-items: center; gap: 12px;
+  text-align: center; color: var(--muted);
+}
+.map-msg p { margin: 0; }
+.map-bar { align-items: center; }                             /* chips keep 44 px next to the 52 px selectors */
+.map-bar .seg, .map-bar .chip, .map-legend { box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 4px 12px rgba(0, 0, 0, .14); }
+.map-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.map-filters .chip:not(.on) { background: var(--card); }
+.map-legend {
+  position: absolute; z-index: 2; left: 8px; bottom: 12px; max-width: calc(100% - 96px); pointer-events: none;
+  display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 10px; border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 90%, transparent); color: var(--text); font-size: .75rem;
+}
+.map-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* State swatch: .sq = area colour (legend); round = place state (lists), wish drawn as a ring like the map points. */
+.st-dot { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--map-never); box-shadow: inset 0 0 0 1px var(--line); }
+.st-dot.sq { border-radius: 3px; }
+.st-dot.st-visited { background: var(--map-visited); box-shadow: none; }
+.st-dot.st-planned { background: var(--map-planned); box-shadow: none; }
+.st-dot.st-wish { background: var(--map-wish-solid); box-shadow: none; }
+.st-dot:not(.sq).st-wish { background: var(--card); box-shadow: inset 0 0 0 2.5px var(--accent); }
+.map-sheet-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; }
+.map-sheet-h { margin: 20px 0 8px; font-size: .9rem; color: var(--muted); }
+.map-sheet-end { margin-top: 20px; }
+.map-sheet-end .btn { flex: 1; }
+.map-note { margin: -4px 0 0; font-size: .85rem; }
+.sheet-body .card.list { margin-bottom: 0; }
+.map-ph { display: grid; place-items: center; margin-bottom: 14px; border-radius: 12px; color: var(--muted); font-size: .9rem; }
+img.map-ph { display: block; }
+.map-prev-title { margin-bottom: 6px; }
