@@ -36,29 +36,23 @@ export function bbox(rings) {
 
 // ---- Projections -------------------------------------------------------
 
-// Equal Earth (Šavrič et al. 2018), unit sphere.
-const A1 = 1.340264, A2 = -0.081106, A3 = 0.000893, A4 = 0.003796;
-const M = Math.sqrt(3) / 2;
-
-export function equalEarth(lon, lat) {
-  const t = Math.asin(M * Math.sin(lat * RAD));
-  const t2 = t * t, t6 = t2 * t2 * t2;
-  const x = (lon * RAD * Math.cos(t)) / (M * (A1 + 3 * A2 * t2 + t6 * (7 * A3 + 9 * A4 * t2)));
-  const y = t * (A1 + A2 * t2 + t6 * (A3 + A4 * t2));
-  return [x, y];
+// Orthographic globe (unit sphere) centred on (lon0, lat0), degrees; x east, y north, both in [-1, 1] on the disc.
+export function orthographic(lon, lat, lon0, lat0) {
+  const f = lat * RAD, f0 = lat0 * RAD, dl = (lon - lon0) * RAD;
+  const c = Math.sin(f0) * Math.sin(f) + Math.cos(f0) * Math.cos(f) * Math.cos(dl);   // cos of the angle from the centre
+  return [Math.cos(f) * Math.sin(dl), Math.cos(f0) * Math.sin(f) - Math.sin(f0) * Math.cos(f) * Math.cos(dl), c >= 0];
 }
 
-export function equalEarthInverse(x, y) {
-  let t = y; // Newton on y(t) = A1·t + A2·t³ + A3·t⁷ + A4·t⁹
-  for (let i = 0; i < 20; i++) {
-    const t2 = t * t, t6 = t2 * t2 * t2;
-    const d = (t * (A1 + A2 * t2 + t6 * (A3 + A4 * t2)) - y) / (A1 + 3 * A2 * t2 + t6 * (7 * A3 + 9 * A4 * t2));
-    t -= d;
-    if (Math.abs(d) < 1e-14) break;
-  }
-  const t2 = t * t, t6 = t2 * t2 * t2;
-  const lat = Math.asin(Math.sin(t) / M) / RAD;
-  const lon = (x * M * (A1 + 3 * A2 * t2 + t6 * (7 * A3 + 9 * A4 * t2))) / Math.cos(t) / RAD;
+/** Disc point → [lon, lat] (lon in [-180, 180]); null outside the disc (not finite or beyond the horizon). */
+export function orthographicInverse(x, y, lon0, lat0) {
+  const rho = Math.hypot(x, y);
+  if (!Number.isFinite(rho) || rho > 1) return null;
+  const f0 = lat0 * RAD;
+  if (rho === 0) return [lon0, lat0];
+  const c = Math.asin(rho);
+  const lat = Math.asin(Math.cos(c) * Math.sin(f0) + (y * Math.sin(c) * Math.cos(f0)) / rho) / RAD;
+  let lon = lon0 + Math.atan2(x * Math.sin(c), rho * Math.cos(f0) * Math.cos(c) - y * Math.sin(f0) * Math.sin(c)) / RAD;
+  lon = ((((lon + 180) % 360) + 360) % 360) - 180;
   return [lon, lat];
 }
 

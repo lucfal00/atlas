@@ -6,7 +6,7 @@ Indirizzo: <https://lucfal00.github.io/atlas/>
 
 ## Funzioni
 
-- **Mappa**: atlante disegnato dai confini Natural Earth, vista Mondo o Italia (regioni). Aree colorate per stato (visitato, da visitare, mai), punti per i luoghi (pieno = visitato, anello = da visitare), raggruppamento a zoom basso. Tre numeri in alto: paesi, regioni (su 20) e luoghi visitati. Tocco su un'area per vedere i luoghi e segnarla a mano come visitata; pressione lunga su un punto vuoto per creare un luogo.
+- **Mappa**: atlante disegnato dai confini Natural Earth, vista Mondo (globo da ruotare con il dito) o Italia (regioni), con pulsante per tornare alla vista iniziale. Aree colorate per stato (visitato, da visitare, mai), punti per i luoghi (pieno = visitato, anello = da visitare), raggruppamento a zoom basso. Tre numeri in alto: paesi, regioni (su 20) e luoghi visitati. Tocco su un'area per vedere i luoghi e segnarla a mano come visitata; pressione lunga su un punto vuoto per creare un luogo.
 - **Luoghi**: elenco con ricerca per nome. Ogni luogo ha categoria, stato (visitato o da visitare), data facoltativa, nota e posizione (ricerca per nome, tocco sulla mappa o posizione attuale); paese e regione sono calcolati sul dispositivo.
 - **Viaggi**: date, tappe ordinate, percorso sulla mappa, spesa totale e nota. I luoghi di un viaggio passato o in corso contano come visitati.
 - **Impostazioni**: tema (automatico, chiaro, scuro), città di casa (inizio del percorso), sincronizzazione, backup, crediti.

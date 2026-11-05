@@ -1,7 +1,7 @@
 // Offline support. Pages: network first (a new version shows on the next launch), cache when offline.
 // Other same-origin files: answer from cache, refresh the cache in the background.
 // Cross-origin requests (api.github.com, nominatim.openstreetmap.org) are never touched.
-const CACHE = 'atlas-v3';
+const CACHE = 'atlas-v4';
 const FILES = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './js/app.js', './js/db.js', './js/store.js', './js/logic.js', './js/geo.js', './js/merge.js',

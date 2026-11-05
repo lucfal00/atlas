@@ -7,7 +7,17 @@
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { decode, equalEarth } from '../js/geo.js';
+import { decode } from '../js/geo.js';
+
+// Equal Earth (Šavrič et al. 2018), unit sphere: the icons keep this projection (js/geo.js now uses Mercator).
+const EA = [1.340264, -0.081106, 0.000893, 0.003796], EM = Math.sqrt(3) / 2;
+function equalEarth(lon, lat) {
+  const t = Math.asin(EM * Math.sin((lat * Math.PI) / 180)), t2 = t * t, t6 = t2 * t2 * t2;
+  return [
+    ((lon * Math.PI) / 180 * Math.cos(t)) / (EM * (EA[0] + 3 * EA[1] * t2 + t6 * (7 * EA[2] + 9 * EA[3] * t2))),
+    t * (EA[0] + EA[1] * t2 + t6 * (EA[2] + EA[3] * t2)),
+  ];
+}
 
 const ROOT = new URL('../', import.meta.url);
 const OUT = new URL('icons/', ROOT);

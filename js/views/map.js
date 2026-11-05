@@ -60,9 +60,13 @@ export async function render(el, ctx) {
       <div class="map-nums"></div>
     </div>
     <div class="map-legend"><span><i class="st-dot sq st-visited"></i>Visitato</span><span><i class="st-dot sq st-wish"></i>Da visitare</span><span><i class="st-dot sq"></i>Mai</span></div>
+    <button type="button" class="map-reset" aria-label="Vista iniziale" title="Vista iniziale" hidden><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.2"/></svg></button>
     <a class="map-fab" href="#luogo/nuovo" aria-label="Nuovo luogo">+</a>
   </div>`;
   const wrap = el.firstElementChild;
+
+  const reset = wrap.querySelector('.map-reset');
+  reset.onclick = () => map.reset();
 
   function drawNums() {
     const n = visitedCounts(cur.doc, cur.today);
@@ -150,6 +154,7 @@ export async function render(el, ctx) {
   const map = createMap(wrap, {
     view, geo, areas: data.areas, points: points(), focus: cams[view] || undefined,
     onArea, onPoint, onCluster,
+    onAway: (away) => { reset.hidden = !away; },
     onLongPress: (lat, lon) => { location.hash = newHere(lat, lon); },
   });
   drawNums();

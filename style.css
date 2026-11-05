@@ -255,6 +255,15 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
   font-size: 1.8rem; line-height: 1; text-decoration: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
 }
 
+.map-reset {
+  position: absolute; z-index: 2; right: 22px; bottom: 84px; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line);
+  border-radius: 50%; display: grid; place-items: center; background: var(--card); color: var(--accent-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 4px 12px rgba(0, 0, 0, .18); cursor: pointer;
+}
+.map-reset[hidden] { display: none; }
+.map-reset svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.map-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* ---- Modal sheet ----------------------------------------------------- */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center;
@@ -281,6 +290,9 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 :root { --map-wish-solid: color-mix(in srgb, var(--accent) 25%, var(--map-never)); }
 .map-svg { cursor: grab; -webkit-touch-callout: none; }
 .map-svg.drag { cursor: grabbing; }
+.map-wrap:has(.map-svg.globe) { background: var(--bg); }
+.map-svg .sea { fill: var(--map-sea); stroke: var(--line); stroke-width: 1; }
+.map-svg .shade { fill: url(#globe-shade); pointer-events: none; }
 .map-svg.static { cursor: default; pointer-events: none; touch-action: auto; }
 .map-svg path { fill-rule: evenodd; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .map-svg .ctx { pointer-events: none; }

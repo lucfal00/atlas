@@ -29,7 +29,7 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#impostazioni`, `#luogo/<id>`, `#l
 - Aree colorate per stato (§5.1): visitato, da visitare, mai. Luoghi come punti: pieno = visitato, anello = da visitare.
   Raggruppamento (§5.3): pallino con numero; tocco → zoom ×2 centrato.
 - Tre numeri in alto: paesi visitati, regioni visitate (n/20), luoghi visitati.
-- Gesti: trascinamento, pizzico, rotella, doppio tocco = zoom ×2. Zoom 1×–40× (Mondo), 1×–20× (Italia).
+- Gesti: trascinamento, pizzico, rotella, doppio tocco = zoom ×2. Zoom 1×–8× (Mondo, globo: il trascinamento lo ruota), 1×–20× (Italia). Pulsante tondo «Vista iniziale» in basso a destra sopra il +, visibile solo a vista spostata o ingrandita.
 - Tocco su un'area → foglio: nome, stato, segno manuale (**Segna come visitato** / **Togli segno**), luoghi nell'area, **Aggiungi luogo qui**.
 - Tocco su un punto → anteprima (nome, categoria, stato) → apre `#luogo/<id>`.
 - Pressione lunga su un punto vuoto → nuovo luogo con quelle coordinate. Pulsante **+**.
@@ -114,8 +114,8 @@ Non previste (limiti di spazio su GitHub).
 - Formato: `{ "q": 1000, "features": [{ "k": "IT", "n": "Italia", "r": "Campania", "rings": [[x0, y0, dx1, dy1, …]] }] }` (`r` solo per le province).
 
 ### 7.2 Disegno
-- Proiezioni: Mondo **Equal Earth**; Italia equirettangolare `x = (lon − 12,5) · cos 42°`, `y = −lat`.
-- Un `path` SVG per area, generato una volta per vista; zoom e spostamento cambiano solo il `viewBox`; i punti si ricalcolano a ogni cambio di zoom (§5.3).
+- Proiezioni: Mondo **globo ortografico** (SVG ridisegnato a ogni rotazione: il trascinamento ruota il globo, pizzico / rotella / doppio tocco ingrandiscono 1×–8×, anelli tagliati all'orizzonte, punti sul lato nascosto non disegnati, vista iniziale su Europa lon 12° lat 40°); Italia equirettangolare `x = (lon − 12,5) · cos 42°`, `y = −lat`.
+- Un `path` SVG per area; Italia: generato una volta, zoom e spostamento cambiano solo il `viewBox`; Mondo: ricalcolato a ogni rotazione o zoom; i punti si ricalcolano a ogni cambio di zoom (§5.3).
 - Gesti con Pointer Events (un dito = sposta, due dita = zoom attorno al punto medio), rotella = zoom attorno al cursore.
 
 ### 7.3 Paese e regione da coordinate

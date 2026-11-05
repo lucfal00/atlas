@@ -20,19 +20,28 @@ test('bbox: [minX, minY, maxX, maxY] over all rings', () => {
   assert.deepEqual(G.bbox(rings), [-3, 0, 10, 9]);
 });
 
-test('equalEarth: reference values and inverse', () => {
-  assert.deepEqual(G.equalEarth(0, 0), [0, 0]);
-  near(G.equalEarth(180, 0)[0], 2.70663, 1e-4);
-  near(G.equalEarth(0, 90)[1], 1.31736, 1e-4);
-  assert.ok(G.equalEarth(0, 45)[1] > 0 && G.equalEarth(0, -45)[1] < 0); // y positive north
-  const [lon, lat] = G.equalEarthInverse(...G.equalEarth(14.27, 40.85));
-  near(lon, 14.27, 1e-6);
-  near(lat, 40.85, 1e-6);
-  for (const [lo, la] of [[0, 90], [0, -90], [-179.9, -89.9], [179.9, 89.9], [-9.14, 38.72], [0, 0], [151.2, -33.9]]) {
-    const r = G.equalEarthInverse(...G.equalEarth(lo, la));
-    near(r[0], lo, 1e-6, 'lon');
-    near(r[1], la, 1e-6, 'lat');
+test('orthographic: centre, horizon, back side, round trip', () => {
+  assert.deepEqual(G.orthographic(12, 40, 12, 40), [0, 0, true]);
+  const [ex, ey, ev] = G.orthographic(102, 0, 12, 0);          // 90° east of the centre: on the horizon
+  near(ex, 1, 1e-12);
+  near(ey, 0, 1e-12);
+  assert.equal(ev, true);
+  assert.equal(G.orthographic(-168, 0, 12, 0)[2], false);       // antipode
+  assert.equal(G.orthographic(12, 85, 12, 0)[2], true);
+  assert.equal(G.orthographic(192, 10, 12, 0)[2], false);
+  assert.ok(G.orthographic(12, 50, 12, 40)[1] > 0 && G.orthographic(12, 30, 12, 40)[1] < 0); // y positive north
+  assert.ok(G.orthographic(20, 40, 12, 40)[0] > 0);             // east is right
+  for (const [lo, la, lo0, la0] of [[14.27, 40.85, 12, 40], [151.2, -33.9, 151, -30], [-9, 38, 12, 40], [0, 0, 0, 0], [100, 50, 60, 80], [-170, -20, 170, 10]]) {
+    const [x, y, vis] = G.orthographic(lo, la, lo0, la0);
+    assert.equal(vis, true);
+    const r = G.orthographicInverse(x, y, lo0, la0);
+    near(r[0], lo, 1e-9, 'lon');
+    near(r[1], la, 1e-9, 'lat');
   }
+  assert.deepEqual(G.orthographicInverse(0, 0, 12, 40), [12, 40]);
+  assert.equal(G.orthographicInverse(1.01, 0, 12, 40), null);
+  assert.equal(G.orthographicInverse(0.8, 0.8, 12, 40), null);
+  assert.equal(G.orthographicInverse(NaN, 0, 12, 40), null);
 });
 
 test('italyProj: equirectangular around 12.5E, 42N', () => {
