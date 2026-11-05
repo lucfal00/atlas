@@ -393,6 +393,7 @@ export async function runSync() {
     if (!cfg) return;                             // disconnected meanwhile
     cfg.at = Date.now();
     await storeCfg();
+    if (/^(Sincronizzazione|Token)/.test(notice)) notice = '';   // a failure banner is stale once a sync works
     setSync('idle', '', cfg.at);
   } catch (e) {
     if (cfg !== c) return;                        // disconnected (or relinked) meanwhile: this failure is stale
