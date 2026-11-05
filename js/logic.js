@@ -13,6 +13,36 @@ export function toKey(d) {
 
 export const todayKey = (now = new Date()) => toKey(now);
 
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** True for a 'YYYY-MM' month key. */
+export const isMonth = (v) => typeof v === 'string' && MONTH.test(v);
+
+/**
+ * Month range of a place: { from, to } ('YYYY-MM'); empty `to` = `from`. Null if `from` is missing / invalid,
+ * `to` is invalid, or `to` < `from`. Empty `from` and `to` → { from: null, to: null }.
+ */
+export function monthRange(from, to) {
+  const f = from || null, t = to || null;
+  if (!f) return t ? null : { from: null, to: null };
+  if (!isMonth(f) || (t && !isMonth(t)) || (t && t < f)) return null;
+  return { from: f, to: t || f };
+}
+
+/** Score categories of a visited place (1–5 stars each, higher = better value). */
+export const SCORES = [
+  { key: 'cibo', label: 'Cibo' }, { key: 'cultura', label: 'Cultura' }, { key: 'paesaggio', label: 'Paesaggio' },
+  { key: 'atmosfera', label: 'Atmosfera' }, { key: 'prezzi', label: 'Prezzi' },
+];
+
+/** Only valid keys with integer values 1–5; null if none is left. */
+export function cleanScores(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  const out = {};
+  for (const { key } of SCORES) if (Number.isInteger(s[key]) && s[key] >= 1 && s[key] <= 5) out[key] = s[key];
+  return Object.keys(out).length ? out : null;
+}
+
 // ---- Document ----------------------------------------------------------
 
 /** Prefix + 6 random base36 chars: 'l_ab12cd'. */

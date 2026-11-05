@@ -17,6 +17,7 @@
   --radius: 18px;
   --tabbar-h: 63px;                  /* tab bar without the safe-area inset */
   --banner-h: 0px;                   /* height of the visible banner (set by app.js) */
+  --partner: #2f7cf6;
   --map-sea: #e3eef1;
   /* Map: resolved on :root, so they follow the theme's --accent / --empty. */
   --map-visited: var(--accent);
@@ -252,8 +253,9 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 .map-fab {
   position: absolute; z-index: 2; right: 16px; bottom: 16px; width: 56px; height: 56px; border: 0; border-radius: 50%;
   display: grid; place-items: center; background: var(--accent-strong); color: var(--on-accent);
-  font-size: 1.8rem; line-height: 1; text-decoration: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+  text-decoration: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
 }
+.map-fab .plus, .fab .plus { display: block; }
 
 .map-reset {
   position: absolute; z-index: 2; right: 22px; bottom: 84px; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line);
@@ -309,10 +311,15 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 .map-svg .home rect { fill: var(--card); stroke: var(--accent-strong); stroke-width: 2; }
 .map-svg .pt { cursor: pointer; }
 .map-svg .pt .hit { fill: transparent; }
-.map-svg .pt .dot { stroke: var(--card); stroke-width: 1.5; }
-.map-svg .pt .dot.st-wish { fill: var(--card); stroke: var(--accent); stroke-width: 2.5; }
-.map-svg .pt text { fill: var(--on-accent); font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; }
-.map-svg .pt .st-wish + text { fill: var(--accent-strong); }
+/* Place points are neutral (white / black), never the area colour: visited = white disc, wish = white ring, partner = blue. */
+.map-svg .pt .dot.st-visited { fill: #fff; stroke: #15171c; stroke-width: 1.5; }
+.map-svg .pt .dot.st-visited.partner { fill: var(--partner); }
+.map-svg .pt .dot.st-wish { fill: none; stroke: #fff; stroke-width: 3; }
+.map-svg .pt .halo { fill: none; stroke: #15171c; stroke-width: 1.5; }
+.map-svg .pt text { fill: #15171c; font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 2.5px; stroke-linejoin: round; }
+.map-svg .pt.partner text { fill: #fff; stroke: none; }
+.map-svg .atmo { fill: none; stroke: #8fb8ff; stroke-opacity: .45; stroke-width: 3; pointer-events: none; filter: blur(1.2px); }
+.map-svg .grat { fill: none; stroke: var(--text); stroke-opacity: .09; stroke-width: .7; pointer-events: none; vector-effect: non-scaling-stroke; }
 
 .map-msg {
   position: absolute; inset: 0; margin: 0; padding: 16px; display: grid; place-content: center; justify-items: center; gap: 12px;
@@ -348,9 +355,27 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 .fab {
   position: fixed; z-index: 5; right: 16px; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
   width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--accent-strong); color: var(--on-accent); font-size: 1.8rem; line-height: 1; text-decoration: none;
+  background: var(--accent-strong); color: var(--on-accent); text-decoration: none;
   box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
 }
 .rows button.row { width: 100%; background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; min-height: 44px; cursor: pointer; }
 .geo-fields { display: grid; gap: 10px; margin-top: 10px; }
 .sheet-body .btn-row { margin-top: 16px; }
+
+/* ---- Scores (stars) and partner badge ---- */
+.score { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.score > span:first-child { font-size: .9rem; font-weight: 600; }
+.stars { display: inline-flex; }
+.star { width: 44px; height: 44px; padding: 0; border: 0; background: none; font-size: 1.5rem; line-height: 1; color: var(--line); cursor: pointer; }
+.star.on { color: var(--accent); }
+.star:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 8px; }
+.badge-partner { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--partner); color: #fff; font-size: .75rem; font-weight: 600; }
+.form label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; }
+.form label.check input { width: 22px; height: 22px; }
+.place-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.field-group { display: grid; gap: 6px; }
+.field-group .lbl { font-weight: 600; font-size: .9rem; }
+.hint { margin: -8px 0 0; font-size: .85rem; }
+.visited-only { display: grid; gap: 14px; }
+.visited-only[hidden] { display: none; }
+.scores { display: grid; gap: 2px; }

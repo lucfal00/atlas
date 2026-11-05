@@ -159,3 +159,13 @@ test('fold: accent- and case-insensitive form', () => {
   assert.equal(L.fold('CITTÀ'), 'citta');
   assert.equal(L.fold(null), '');
 });
+
+test('monthRange: empty to = from, to < from rejected', async () => {
+  const { monthRange, isMonth } = await import('../js/logic.js');
+  assert.deepEqual(monthRange('2024-03', ''), { from: '2024-03', to: '2024-03' });
+  assert.deepEqual(monthRange('2023-12', '2024-01'), { from: '2023-12', to: '2024-01' });
+  assert.deepEqual(monthRange('', ''), { from: null, to: null });
+  for (const [f, t] of [['2024-05', '2024-04'], ['', '2024-04'], ['2024-13', ''], ['2024-05', 'x']]) assert.equal(monthRange(f, t), null, `${f} ${t}`);
+  assert.equal(isMonth('2024-12'), true);
+  assert.equal(isMonth('2024-00'), false);
+});

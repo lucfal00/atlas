@@ -205,5 +205,18 @@ store.runSync();
 
 Promise.resolve(navigator.storage?.persist?.()).catch(() => {});
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Service worker non registrato', e));
+  // A new version must reach the open app: check on start and on return, reload once when it takes over.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;          // first install: nothing stale to replace
+    reloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) reg.update().catch(() => {});
+    });
+  }).catch((e) => console.warn('Service worker non registrato', e));
 }

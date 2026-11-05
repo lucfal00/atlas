@@ -27,6 +27,7 @@ const RANK = { wish: 1, visited: 2 };
 const PROJ = { italia: [italyProj, italyInverse] };
 const RAD = Math.PI / 180;
 const HOME = { lon: 12, lat: 40 };                  // initial globe centre (Europe)
+const SPIN_DEG_S = 6;
 const MAX_LAT0 = 80, ARC_STEP = 8 * RAD, SLERP = 3 * RAD, MIN_PX = 0.4;
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -77,8 +78,21 @@ const vec = (lon, lat) => {
   return [Math.cos(f) * Math.sin(l), Math.sin(f), Math.cos(f) * Math.cos(l)];
 };
 
+/**
+ * Orientation of a ring on the sphere, seen from outside at its own centre `c` (sum of its vertices): true = counter-clockwise.
+ * Unlike a shoelace on lon / lat this is right for rings that enclose a pole (Antarctica), whose longitudes do not close.
+ */
+function spinCcw(v, n, c) {
+  let s = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, a = 3 * i, b = 3 * j;
+    s += (v[a + 1] * v[b + 2] - v[a + 2] * v[b + 1]) * c[0] + (v[a + 2] * v[b] - v[a] * v[b + 2]) * c[1] + (v[a] * v[b + 1] - v[a + 1] * v[b]) * c[2];
+  }
+  return s > 0;
+}
+
 /** World features as unit vectors (x east-ish, y north, z toward lon 0): rings, winding, bounding cap. Built once. */
-function globeData(src) {
+export function globeData(src) {
   const feats = [];
   for (const f of src.features) {
     const rings = [], sum = [0, 0, 0];
@@ -86,16 +100,14 @@ function globeData(src) {
       const end = r.length - (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? 1 : 0);
       if (end < 3) continue;
       const v = new Float64Array(end * 3);
-      let area = 0;
+      const rs = [0, 0, 0];
       for (let i = 0; i < end; i++) {
         const q = vec(r[i][0], r[i][1]);
         v.set(q, i * 3);
-        sum[0] += q[0]; sum[1] += q[1]; sum[2] += q[2];
-        const nx = r[(i + 1) % end], d = nx[0] - r[i][0];
-        const lx = r[i][0], ly = r[i][1], mx = lx + (d > 180 ? d - 360 : d < -180 ? d + 360 : d), my = nx[1];
-        area += lx * my - mx * ly;                  // shoelace on the unwrapped longitudes
+        rs[0] += q[0]; rs[1] += q[1]; rs[2] += q[2];
       }
-      rings.push({ v, ccw: area > 0 });
+      for (let m = 0; m < 3; m++) sum[m] += rs[m];
+      rings.push({ v, ccw: spinCcw(v, end, rs) });
     }
     if (!rings.length) continue;
     const m = Math.hypot(...sum) || 1, c = sum.map((x) => x / m);
@@ -143,7 +155,7 @@ let SX = new Float64Array(2048), SY = new Float64Array(2048), SC = new Float64Ar
 const mod = (a, m) => ((a % m) + m) % m;
 
 /** Path data of a ring seen from basis B (e, n, v), radius R px, centre (X0, Y0): the visible part, closed along the horizon. */
-function ringPath(ring, B, R, X0, Y0) {
+export function ringPath(ring, B, R, X0, Y0) {
   const { v, ccw } = ring, n = v.length / 3, { e, n: nn, v: vw } = B;
   if (SX.length < n) { SX = new Float64Array(n * 2); SY = new Float64Array(n * 2); SC = new Float64Array(n * 2); }
   let hidden = -1, seen = 0;
@@ -219,6 +231,36 @@ function ringPath(ring, B, R, X0, Y0) {
   return d;
 }
 
+/** Graticule every 30°, as path data: only the visible hemisphere (pen up on the far side). */
+const GRAT = (() => {
+  const lines = [];
+  for (let lo = -180; lo < 180; lo += 30) {
+    const l = [];
+    for (let la = -90; la <= 90; la += 5) l.push(vec(lo, la));
+    lines.push(l);
+  }
+  for (let la = -60; la <= 60; la += 30) {
+    const l = [];
+    for (let lo = -180; lo <= 180; lo += 5) l.push(vec(lo, la));
+    lines.push(l);
+  }
+  return lines;
+})();
+
+export function graticule(B, R, X0, Y0) {
+  const { e, n, v } = B, f = (x) => Math.round(x * 10) / 10;
+  let d = '';
+  for (const line of GRAT) {
+    let pen = false;
+    for (const p of line) {
+      if (p[0] * v[0] + p[1] * v[1] + p[2] * v[2] < 0) { pen = false; continue; }
+      d += `${pen ? 'L' : 'M'}${f(X0 + R * (p[0] * e[0] + p[2] * e[2]))} ${f(Y0 - R * (p[0] * n[0] + p[1] * n[1] + p[2] * n[2]))}`;
+      pen = true;
+    }
+  }
+  return d;
+}
+
 // ---- Component ---------------------------------------------------------------
 
 export function createMap(el, opts) {
@@ -235,8 +277,8 @@ export function createMap(el, opts) {
   svg.setAttribute('role', 'img');
   svg.innerHTML = '<defs><radialGradient id="globe-shade" cx=".5" cy=".5" r=".5" fx=".38" fy=".32">'
     + '<stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".3"/></radialGradient></defs>'
-    + '<circle class="sea"/><g class="ctx"></g><g class="areas"></g><circle class="shade"/><path class="route"/><g class="pts"></g>';
-  const [, sea, ctxG, areasG, shade, route, ptsG] = svg.children;
+    + '<circle class="sea"/><circle class="atmo"/><path class="grat"/><g class="ctx"></g><g class="areas"></g><circle class="shade"/><path class="route"/><g class="pts"></g>';
+  const [, sea, atmo, grat, ctxG, areasG, shade, route, ptsG] = svg.children;
   el.append(svg);
 
   // ---- Layers ----
@@ -254,7 +296,7 @@ export function createMap(el, opts) {
     paths = [...areasG.children];
     shown = [];
     svg.classList.toggle('globe', globe());
-    sea.style.display = shade.style.display = globe() ? '' : 'none';
+    for (const c of [sea, atmo, grat, shade]) c.style.display = globe() ? '' : 'none';
     svg.setAttribute('aria-label', o.view === 'world' ? 'Mappa del mondo' : "Mappa dell'Italia");
     rekey();
     drawLines();
@@ -317,7 +359,7 @@ export function createMap(el, opts) {
   /** Points and clusters at constant screen size: groups scaled by 1/k, radii in pixels. */
   function drawPoints() {
     drawnK = k;
-    const gl = globe(), kk = gl ? 1 : k, s = 1 / kk, list = [], st = new Map();
+    const gl = globe(), kk = gl ? 1 : k, s = 1 / kk, list = [], st = new Map(), pr = new Set();
     for (const p of o.points || []) {
       if (!finite(p.lat) || !finite(p.lon)) continue;
       const xy = pxy(p.lon, p.lat);
@@ -325,6 +367,7 @@ export function createMap(el, opts) {
       const [X, Y] = xy;
       list.push({ id: p.id, x: X * kk, y: Y * kk });   // grid anchored to the map origin: panning never regroups
       st.set(p.id, STATES.has(p.state) ? p.state : 'wish');
+      if (p.partner === true && p.state === 'visited') pr.add(p.id);   // blue: visited with the partner
     }
     groups = cluster(list, CELL).map((g) => ({ X: g.x * s, Y: g.y * s, ids: g.ids }));
     let h = '';
@@ -338,10 +381,13 @@ export function createMap(el, opts) {
       let best = 'wish';
       for (const id of g.ids) if (RANK[st.get(id)] > RANK[best]) best = st.get(id);
       const n = g.ids.length, tr = `translate(${g.X} ${g.Y}) scale(${s})`;
-      h += n === 1
-        ? `<g class="pt" data-i="${i}" transform="${tr}"><circle class="hit" r="${R_HIT}"/><circle class="dot st-${best}" r="${R_DOT}"/></g>`
-        : `<g class="pt cl" data-i="${i}" transform="${tr}"><circle class="hit" r="${R_HIT}"/>`
-          + `<circle class="dot st-${best}" r="${n < 10 ? 11 : 13}"/><text dy=".35em">${n > 99 ? '99+' : n}</text></g>`;
+      const r = n === 1 ? R_DOT : n < 10 ? 11 : 13, blue = g.ids.every((id) => pr.has(id));
+      // Wish = white ring without fill, outlined dark on both sides so it reads on light and dark areas.
+      const sym = best === 'wish'
+        ? `<circle class="halo" r="${r + 2.25}"/><circle class="halo" r="${r - 2.25}"/><circle class="dot st-wish" r="${r}"/>`
+        : `<circle class="dot st-visited${blue ? ' partner' : ''}" r="${r}"/>`;
+      h += `<g class="pt${n === 1 ? '' : ' cl'}${blue ? ' partner' : ''}" data-i="${i}" transform="${tr}"><circle class="hit" r="${R_HIT}"/>${sym}`
+        + `${n === 1 ? '' : `<text dy=".35em">${n > 99 ? '99+' : n}</text>`}</g>`;
     });
     ptsG.innerHTML = h;
   }
@@ -370,11 +416,12 @@ export function createMap(el, opts) {
 
   function drawGlobe() {
     const Bs = basis(), R = rBase() * k, X0 = W / 2, Y0 = H / 2;
-    for (const c of [sea, shade]) {
+    for (const c of [sea, shade, atmo]) {
       c.setAttribute('cx', X0);
       c.setAttribute('cy', Y0);
       c.setAttribute('r', R);
     }
+    grat.setAttribute('d', graticule(Bs, R, X0, Y0));
     b.feats.forEach((ft, i) => {
       const dc = ft.c[0] * Bs.v[0] + ft.c[1] * Bs.v[1] + ft.c[2] * Bs.v[2];
       let d = '';
@@ -500,7 +547,7 @@ export function createMap(el, opts) {
     const far = k > k0 * 1.01 || (globe()
       ? Math.abs(mod(lon0 - HOME.lon + 180, 360) - 180) > 0.5 || Math.abs(lat0 - HOME.lat) > 0.5
       : Math.abs(cx - (b.box[0] + b.box[2]) / 2) * k > 3 || Math.abs(cy - (b.box[1] + b.box[3]) / 2) * k > 3);
-    if (far !== away) {
+    if (far !== away && !spinning) {
       away = far;
       o.onAway?.(far);
     }
@@ -673,6 +720,26 @@ export function createMap(el, opts) {
     if (ptrs.size) anchor();
   }
 
+  // Slow auto-rotation of the globe (option `spin`): stops for good at the first touch of the map, and when hidden / destroyed.
+  let spinning = !!o.spin && o.view === 'world' && !reduce, spinRaf = 0, spinLast = 0;
+  const stopSpin = () => { spinning = false; cancelAnimationFrame(spinRaf); };
+  function spinStep(now) {
+    if (!spinning || dead) return;
+    const dt = Math.min(0.1, (now - (spinLast || now)) / 1000);
+    spinLast = now;
+    if (ready && globe() && !anim && !ptrs.size) {
+      lon0 = mod(lon0 + SPIN_DEG_S * dt + 180, 360) - 180;
+      schedule();
+    }
+    spinRaf = requestAnimationFrame(spinStep);
+  }
+  const onVis = () => { if (document.hidden) stopSpin(); };
+  if (spinning) {
+    spinRaf = requestAnimationFrame(spinStep);
+    document.addEventListener('visibilitychange', onVis);
+    for (const t of ['pointerdown', 'wheel', 'touchstart']) svg.addEventListener(t, stopSpin, { once: true, passive: true });
+  }
+
   const ac = new AbortController();
   if (o.interactive) {
     const on = (type, fn, extra) => svg.addEventListener(type, fn, { signal: ac.signal, ...extra });
@@ -725,6 +792,8 @@ export function createMap(el, opts) {
       dead = true;
       ac.abort();
       ro?.disconnect();
+      stopSpin();
+      document.removeEventListener('visibilitychange', onVis);
       cancelAnimationFrame(raf);
       clearTimeout(longT);
       clearTimeout(tapT);

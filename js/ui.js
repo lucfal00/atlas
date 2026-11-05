@@ -1,5 +1,7 @@
 // Formatting and escaping helpers shared by views.
 
+import { SCORES } from './logic.js';
+
 const MONTHS = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -14,6 +16,24 @@ export function fmtRange(from, to) {
   if (from.slice(0, 7) === to.slice(0, 7)) return `${+from.slice(8)}–${part(to)} ${y2}`;
   return `${part(from)} – ${part(to)} ${y2}`;
 }
+
+/** Month range: 'mar 2024', 'mar–apr 2024', 'dic 2023 – gen 2024'; '' without `from`. */
+export function fmtMonths(from, to) {
+  if (!from) return '';
+  const m = (k) => MONTHS[+k.slice(5, 7) - 1].toLowerCase();
+  const t = to || from, y1 = from.slice(0, 4), y2 = t.slice(0, 4);
+  if (t === from) return `${m(from)} ${y1}`;
+  return y1 === y2 ? `${m(from)}–${m(t)} ${y2}` : `${m(from)} ${y1} – ${m(t)} ${y2}`;
+}
+
+/** Five tappable stars per score category (edit and detail share the markup); `vals` = { cibo: 4, … }. */
+export function starsHtml(vals) {
+  return SCORES.map(({ key, label }) => `<div class="score" role="group" aria-label="${esc(label)}"><span>${esc(label)}</span><span class="stars">`
+    + [1, 2, 3, 4, 5].map((n) => `<button type="button" class="star${(vals?.[key] || 0) >= n ? ' on' : ''}" data-score="${key}" data-n="${n}" aria-label="${esc(label)} ${n} su 5" aria-pressed="${vals?.[key] === n}">★</button>`).join('')
+    + '</span></div>').join('');
+}
+
+export const PLUS = '<svg class="plus" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>';
 
 export const fmtShort = (key) => `${+key.slice(8)}/${+key.slice(5, 7)}`;
 export const fmtFull = (key) => `${fmtShort(key)}/${key.slice(0, 4)}`;

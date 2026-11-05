@@ -1,6 +1,8 @@
 // Pure document validation and last-writer-wins merge (sync and backup import).
 // No DOM, no network, no storage.
 
+import { isMonth, cleanScores, SCORES } from './logic.js';
+
 const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v) => typeof v === 'string';
@@ -13,7 +15,13 @@ const stamp = (o, field) => (Number.isFinite(o?.[field]) ? o[field] : 0);
 // Unknown fields (old documents: rating, tags, costs, diary…) are ignored here and dropped by sanitizeDoc.
 
 /** A place that screens can render without throwing. */
-const validPlace = (p) => isObj(p) && isStr(p.id) && isStr(p.name) && optNum(p.lat) && optNum(p.lon);
+const optMonth = (v) => v === undefined || v === null || isMonth(v);
+const validScores = (s) => s === undefined || s === null || (isObj(s) && Object.entries(s).every(([k, v]) => SCORES.some((x) => x.key === k) && Number.isInteger(v) && v >= 1 && v <= 5));
+const basePlace = (p) => isObj(p) && isStr(p.id) && isStr(p.name) && optNum(p.lat) && optNum(p.lon);
+/** Strict form (validateDoc): the new fields must also be well-formed; sanitizeDoc repairs them instead. */
+const validPlace = (p) => basePlace(p)
+  && optMonth(p.from) && optMonth(p.to) && !(p.from && p.to && p.to < p.from)
+  && (p.partner === undefined || typeof p.partner === 'boolean') && validScores(p.scores);
 
 /** A trip with valid dates and well-formed stops. */
 function validTrip(t) {
@@ -32,7 +40,7 @@ export function validateDoc(d) {
     && isObj(d.settings);
 }
 
-const PLACE_KEYS = ['id', 'name', 'cat', 'status', 'date', 'note', 'lat', 'lon', 'country', 'region', 'deleted', 'updatedAt'];
+const PLACE_KEYS = ['id', 'name', 'cat', 'status', 'from', 'to', 'partner', 'scores', 'note', 'lat', 'lon', 'country', 'region', 'deleted', 'updatedAt'];
 const TRIP_KEYS = ['id', 'title', 'from', 'to', 'stops', 'note', 'spend', 'deleted', 'updatedAt'];
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 
@@ -40,7 +48,14 @@ const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefin
 function cleanPlace(p) {
   const c = pick(p, PLACE_KEYS);
   if (c.status !== 'visited') c.status = 'wish';
-  if (!isDay(c.date)) c.date = (Array.isArray(p.visits) ? p.visits.filter(isDay).sort().pop() : undefined) ?? null;
+  // Old model: a day (or the last visit) becomes a month range; invalid values are dropped.
+  const old = isDay(p.date) ? p.date : Array.isArray(p.visits) ? p.visits.filter(isDay).sort().pop() : undefined;
+  if (!isMonth(c.from)) c.from = old ? old.slice(0, 7) : null;
+  c.to = c.from ? (isMonth(c.to) && c.to >= c.from ? c.to : c.from) : null;
+  c.partner = c.partner === true;
+  const sc = cleanScores(c.scores);
+  if (sc) c.scores = sc;
+  else delete c.scores;
   return c;
 }
 
@@ -65,7 +80,7 @@ export function sanitizeDoc(d) {
   const keep = (list, ok, clean) => list.filter((x) => (ok(x) ? true : (dropped++, false))).map(clean);
   const doc = {
     version: 1,
-    places: keep(d.places, validPlace, cleanPlace),
+    places: keep(d.places, basePlace, cleanPlace),
     trips: keep(d.trips, validTrip, cleanTrip),
     marks: Object.fromEntries(Object.entries(d.marks).filter(([, v]) => (validMark(v) ? true : (dropped++, false)))),
     settings: d.settings,

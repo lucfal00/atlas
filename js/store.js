@@ -156,7 +156,7 @@ export async function locateCoords(lat, lon) {
 
 // ---- Places and trips ----------------------------------------------------
 
-const PLACE_DEFAULTS = () => ({ country: null, region: null, cat: 'altro', status: 'wish', date: null, note: '', deleted: false });
+const PLACE_DEFAULTS = () => ({ country: null, region: null, cat: 'altro', status: 'wish', from: null, to: null, partner: false, note: '', deleted: false });
 
 const TRIP_DEFAULTS = () => ({ note: '', stops: [], spend: null, deleted: false });
 

@@ -118,8 +118,10 @@ test('sanitizeDoc: an old document loses its extra fields and maps onto the new 
   const r = sanitizeDoc(old);
   assert.equal(r.dropped, 0);
   assert.equal('diary' in r.doc, false);
-  assert.deepEqual(r.doc.places[0], { id: 'a', name: 'a', status: 'wish', date: '2025-07-02', lat: 1, lon: 2, country: 'IT', region: 'Campania', deleted: false, updatedAt: 5 });
-  assert.equal(r.doc.places[1].date, '2026-01-02');
+  assert.deepEqual(r.doc.places[0], { id: 'a', name: 'a', status: 'wish', from: '2025-07', to: '2025-07', partner: false, lat: 1, lon: 2, country: 'IT', region: 'Campania', deleted: false, updatedAt: 5 });
+  assert.equal(r.doc.places[1].from, '2026-01');
+  assert.equal(r.doc.places[1].to, '2026-01');
+  assert.equal('date' in r.doc.places[1], false);
   assert.deepEqual(r.doc.trips[0].stops, [{ place: 'a' }]);
   assert.equal(r.doc.trips[0].spend, 14.25);
   for (const k of ['with', 'links', 'budget', 'costs']) assert.equal(k in r.doc.trips[0], false, k);
@@ -370,4 +372,31 @@ test('mergeDocs: result shares no references with the inputs', () => {
   assert.deepEqual(incoming.marks.m, { s: 'visited', t: 1 });
   assert.equal(local.settings.home.name, 'Roma');
   assert.equal(local.places[0].note, 'x');
+});
+
+test('sanitizeDoc: date → from / to, invalid ranges dropped, partner and scores cleaned', () => {
+  const run = (extra) => sanitizeDoc({ ...emptyDoc(), places: [place('a', 1, extra)] }).doc.places[0];
+  const m = run({ date: '2024-03-15' });
+  assert.deepEqual([m.from, m.to], ['2024-03', '2024-03']);
+  assert.deepEqual([run({ from: '2023-12', to: '2024-01' }).from, run({ from: '2023-12', to: '2024-01' }).to], ['2023-12', '2024-01']);
+  assert.equal(run({ from: '2024-05' }).to, '2024-05');
+  assert.equal(run({ from: '2024-05', to: '2024-02' }).to, '2024-05');
+  const bad = run({ from: '2024-13', to: 'x', date: 'oggi' });
+  assert.deepEqual([bad.from, bad.to], [null, null]);
+  assert.equal(run({ partner: 'yes' }).partner, false);
+  assert.equal(run({ partner: true }).partner, true);
+  assert.deepEqual(run({ scores: { cibo: 4, cultura: 0, paesaggio: 6, atmosfera: 2.5, prezzi: 5, altro: 3 } }).scores, { cibo: 4, prezzi: 5 });
+  assert.equal('scores' in run({ scores: { cibo: 'x' } }), false);
+});
+
+test('validateDoc / mergeDocs: month range, partner and scores', () => {
+  const ok = (extra) => validateDoc({ ...emptyDoc(), places: [place('a', 1, extra)] });
+  assert.equal(ok({ from: '2024-03', to: '2024-04', partner: true, scores: { cibo: 5 } }), true);
+  for (const bad of [{ from: '2024-3' }, { from: '2024-05', to: '2024-04' }, { partner: 1 }, { scores: { cibo: 9 } }, { scores: { x: 1 } }]) {
+    assert.equal(ok(bad), false, JSON.stringify(bad));
+  }
+  const a = { ...emptyDoc(), places: [place('a', 1, { from: '2024-03', to: '2024-03' })] };
+  const b = { ...emptyDoc(), places: [place('a', 2, { from: '2024-03', to: '2024-04', partner: true, scores: { cibo: 3 } })] };
+  const p = mergeDocs(a, b).doc.places[0];
+  assert.deepEqual([p.to, p.partner, p.scores], ['2024-04', true, { cibo: 3 }]);
 });

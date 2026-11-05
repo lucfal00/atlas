@@ -1,17 +1,17 @@
-// New / edit place (spec §4.2, §5). Position three ways: Cerca (Nominatim, only on tap), tap on the mini map,
-// Posizione attuale. Country / region are computed from the position and stay editable.
+// New / edit place (spec §4.2, §5). One "Luogo" field is the place name; Cerca (Nominatim, only on tap) or a tap on the
+// mini map sets the position. Country / region are computed from the position and stay editable.
 // Query prefill for #luogo/nuovo: lat, lon, country, region, name, trip (after saving, a stop {place}
 // is appended to that trip and the app goes to #viaggio/<trip>). The position section is redrawn alone, so typed
 // text elsewhere is never lost; store changes do not touch the form.
 import * as store from '../store.js';
 import { createMap } from '../map.js';
 import { searchPlaces } from '../search.js';
-import { esc, CATEGORIES } from '../ui.js';
+import { esc, CATEGORIES, starsHtml } from '../ui.js';
+import { monthRange, cleanScores } from '../logic.js';
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const live = (list) => (list || []).filter((x) => !x.deleted);
 const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function render(el, ctx) {
   const isNew = ctx.params[0] === 'nuovo' || !ctx.params[0];
@@ -54,6 +54,7 @@ export async function render(el, ctx) {
 
   let busy = false, seq = 0, view = f.country === 'IT' ? 'italia' : 'world';
   let found = [], searchMsg = '', locMsg = '', saving = false, searching = false;
+  let scores = cleanScores(old?.scores) || {};
   let map = null;
 
   const hasPos = () => f.lat !== null;
@@ -66,7 +67,7 @@ export async function render(el, ctx) {
 
   function posHtml() {
     return `${hasPos() ? `<p>Coordinate: <b>${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}</b> <button type="button" class="btn" data-act="clear-pos">Rimuovi posizione</button></p>`
-      : '<p class="muted">Nessuna posizione: cerca un luogo, tocca la mappa o usa la posizione attuale.</p>'}
+      : '<p class="muted">Nessuna posizione: cerca il luogo o tocca la mappa.</p>'}
       ${locMsg ? `<p class="${busy ? 'muted' : 'error'}" role="status">${esc(locMsg)}</p>` : ''}
       <div class="geo-fields">${geoHtml()}</div>`;
   }
@@ -78,23 +79,27 @@ export async function render(el, ctx) {
 
   el.innerHTML = `<div class="top"><a class="back" href="${esc(home)}" data-act="cancel">‹ Annulla</a><h1 class="grow">${isNew ? 'Nuovo luogo' : 'Modifica luogo'}</h1></div>
     <form class="form" novalidate>
-      <label class="field">Nome<input type="text" name="name" maxlength="60" value="${esc(old ? old.name : prefName)}" autocomplete="off"></label>
+      <div class="field-group"><label for="place-name" class="lbl">Luogo</label>
+        <div class="place-row"><input id="place-name" type="text" name="name" maxlength="60" value="${esc(old ? old.name : prefName)}" autocomplete="off" placeholder="Nome del luogo"><button type="button" class="btn" data-act="search">Cerca</button></div></div>
       <p class="error" data-err="name" hidden></p>
+      <div data-results></div>
+      <div class="seg" role="radiogroup" aria-label="Mappa"><label class="pick"><input type="radio" name="pview" value="world"${view === 'world' ? ' checked' : ''}><span>Mondo</span></label>
+        <label class="pick"><input type="radio" name="pview" value="italia"${view === 'italia' ? ' checked' : ''}><span>Italia</span></label></div>
+      <div class="map-wrap mini" data-picker></div>
+      <p class="muted hint">Tocca la mappa per spostare il punto</p>
+      <div data-pos></div>
+      <p class="error" data-err="pos" hidden></p>
       <label class="field">Categoria<select name="cat">${CATEGORIES.map((c) => opt(c.key, c.label, c.key === cat)).join('')}</select></label>
       <fieldset><legend>Stato</legend><div class="seg" role="radiogroup" aria-label="Stato">
         <label class="pick"><input type="radio" name="status" value="visited"${status === 'visited' ? ' checked' : ''}><span>Visitato</span></label>
         <label class="pick"><input type="radio" name="status" value="wish"${status === 'wish' ? ' checked' : ''}><span>Da visitare</span></label></div></fieldset>
-      <label class="field" data-date${status === 'visited' ? '' : ' hidden'}>Data<input type="date" name="date" value="${esc(old?.date || '')}"></label>
-      <p class="error" data-err="date" hidden></p>
-      <fieldset><legend>Posizione</legend>
-        <div class="two"><input type="search" data-search placeholder="Cerca un luogo" aria-label="Cerca un luogo" autocomplete="off"><button type="button" class="btn" data-act="search">Cerca</button></div>
-        <div data-results></div>
-        <button type="button" class="btn" data-act="here">Usa la posizione attuale</button>
-        <div class="seg" role="radiogroup" aria-label="Mappa"><label class="pick"><input type="radio" name="pview" value="world"${view === 'world' ? ' checked' : ''}><span>Mondo</span></label>
-          <label class="pick"><input type="radio" name="pview" value="italia"${view === 'italia' ? ' checked' : ''}><span>Italia</span></label></div>
-        <div class="map-wrap mini" data-picker></div>
-        <div data-pos></div>
-      </fieldset>
+      <div class="visited-only" data-visited${status === 'visited' ? '' : ' hidden'}>
+        <div class="two"><label class="field">Dal<input type="month" name="from" value="${esc(old?.from || '')}"></label>
+          <label class="field">Al<input type="month" name="to" value="${esc(old?.to || '')}"></label></div>
+        <p class="error" data-err="date" hidden></p>
+        <label class="check"><input type="checkbox" name="partner"${old?.partner ? ' checked' : ''}><span>Con la fidanzata</span></label>
+        <div class="scores" data-scores>${starsHtml(scores)}</div>
+      </div>
       <label class="field">Nota<textarea name="note">${esc(old?.note || '')}</textarea></label>
       <p class="error" data-err="form" hidden></p>
       <div class="btn-row"><button type="submit" class="btn primary" data-act="save">Salva</button><a class="btn" href="${esc(home)}" data-act="cancel">Annulla</a></div>
@@ -107,14 +112,14 @@ export async function render(el, ctx) {
 
   // ---- Position ----
 
-  const points = () => (hasPos() ? [{ id: 'sel', lat: f.lat, lon: f.lon, state: form.elements.status.value }] : []);
+  const points = () => (hasPos() ? [{ id: 'sel', lat: f.lat, lon: f.lon, state: form.elements.status.value, partner: !!form.elements.partner?.checked }] : []);
   const zoomOf = (v) => (v === 'italia' ? 6 : 8);
 
   /** New position: store it, compute the areas, redraw only the position parts. `focus` re-frames the map. */
   async function setPos(lat, lon, focus = false, name = '') {
     f.lat = +lat.toFixed(6);
     f.lon = +lon.toFixed(6);
-    if (name && !form.elements.name.value.trim()) form.elements.name.value = name.slice(0, 60);
+    if (name) form.elements.name.value = name.slice(0, 60);   // a search result replaces the text; still editable
     const mine = ++seq;
     busy = true;
     locMsg = 'Calcolo di paese e regione…';
@@ -146,7 +151,7 @@ export async function render(el, ctx) {
   }
 
   async function doSearch() {
-    const text = $('[data-search]').value.trim();
+    const text = form.elements.name.value.trim();
     if (!text || searching) return;
     searching = true;
     found = [];
@@ -156,34 +161,11 @@ export async function render(el, ctx) {
       found = await searchPlaces(text);
       searchMsg = found.length ? '' : 'Nessun risultato.';
     } catch (e) {
-      searchMsg = e.message === 'offline' ? 'Serve internet per cercare: tocca la mappa o usa la posizione' : 'Ricerca non riuscita. Riprova più tardi.';
+      searchMsg = e.message === 'offline' ? 'Serve internet per cercare: tocca la mappa' : 'Ricerca non riuscita. Riprova più tardi.';
     }
     searching = false;
     if (ctx.stale()) return;
     drawResults();
-  }
-
-  function here() {
-    if (!navigator.geolocation) {
-      locMsg = 'Posizione non disponibile: tocca la mappa o cerca';
-      return drawPos();
-    }
-    busy = true;
-    locMsg = 'Ricerca della posizione…';
-    drawPos();
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (ctx.stale()) return;
-        setPos(pos.coords.latitude, pos.coords.longitude, true);
-      },
-      () => {
-        if (ctx.stale()) return;
-        busy = false;
-        locMsg = 'Posizione non disponibile: tocca la mappa o cerca';
-        drawPos();
-      },
-      { timeout: 10000 },
-    );
   }
 
   // ---- Save ----
@@ -196,17 +178,20 @@ export async function render(el, ctx) {
 
   async function save() {
     if (saving) return;
-    for (const k of ['name', 'date', 'form']) fail(k, '');
+    for (const k of ['name', 'pos', 'date', 'form']) fail(k, '');
     const name = form.elements.name.value.trim();
     const visited = form.elements.status.value === 'visited';
-    const date = visited ? form.elements.date.value : '';
+    const range = visited ? monthRange(form.elements.from.value, form.elements.to.value) : { from: null, to: null };
     let ok = true;
     if (!name || name.length > 60) {
-      fail('name', 'Il nome è obbligatorio (massimo 60 caratteri)');
+      fail('name', 'Il luogo è obbligatorio (massimo 60 caratteri)');
+      ok = false;
+    } else if (!hasPos()) {
+      fail('pos', 'Cerca il luogo o tocca la mappa');
       ok = false;
     }
-    if (date && !DAY.test(date)) {
-      fail('date', 'Data non valida');
+    if (!range) {
+      fail('date', form.elements.from.value ? 'Il mese finale è prima dell’inizio' : 'Inserisci il mese di inizio');
       ok = false;
     }
     if (!ok) {
@@ -219,7 +204,8 @@ export async function render(el, ctx) {
     try {
       const pid = await store.savePlace({
         ...(id ? { id } : {}),
-        name, cat: form.elements.cat.value, status: visited ? 'visited' : 'wish', date: date || null,
+        name, cat: form.elements.cat.value, status: visited ? 'visited' : 'wish', from: range.from, to: range.to,
+        partner: visited && form.elements.partner.checked, ...(visited ? { scores: cleanScores(scores) } : {}),
         lat: f.lat, lon: f.lon, country: f.country, region: f.region, note: form.elements.note.value.trim(),
       });
       if (trip) {
@@ -247,14 +233,15 @@ export async function render(el, ctx) {
 
   el.onsubmit = (e) => {
     e.preventDefault();
-    if (document.activeElement === $('[data-search]')) doSearch();    // Enter in the search box is a search, not a save
+    if (document.activeElement === form.elements.name) doSearch();    // Enter in the search box is a search, not a save
     else save();
   };
   el.onchange = (e) => {
     const t = e.target;
     if (t.name === 'pview') setView(t.value);
+    else if (t.name === 'partner') map.update({ points: points() });
     else if (t.name === 'status') {
-      $('[data-date]').hidden = t.value !== 'visited';
+      $('[data-visited]').hidden = t.value !== 'visited';
       map.update({ points: points() });
     } else if (t.matches('[data-country]')) {
       f.country = t.value || null;
@@ -268,12 +255,18 @@ export async function render(el, ctx) {
     const t = e.target.closest('button, a[data-act="cancel"]');
     if (!t || !el.contains(t)) return;
     const d = t.dataset;
+    if (d.score) {                                   // tap = set, tap the same star = clear
+      const n = +d.n;
+      if (scores[d.score] === n) delete scores[d.score];
+      else scores[d.score] = n;
+      $('[data-scores]').innerHTML = starsHtml(scores);
+      return;
+    }
     if (d.act === 'cancel') {
       e.preventDefault();
       if (history.length > 1) history.back();
       else location.hash = home;
     } else if (d.act === 'search') doSearch();
-    else if (d.act === 'here') here();
     else if (d.act === 'clear-pos') {
       seq++;
       busy = false;

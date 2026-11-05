@@ -1,6 +1,6 @@
 // Trips list (spec §4.3): In corso / In programma (by start, ascending) / Passati (newest first).
 import { tripState } from '../logic.js';
-import { esc, fmtRange, fmtMoney } from '../ui.js';
+import { esc, fmtRange, fmtMoney, PLUS } from '../ui.js';
 
 const live = (list) => (list || []).filter((x) => !x.deleted);
 
@@ -27,7 +27,7 @@ function body(ctx) {
 
 export function render(el, ctx) {
   const draw = (c) => {
-    el.innerHTML = `<div class="top"><h1 class="grow">Viaggi</h1></div>${body(c)}<a class="fab" href="#viaggio/nuovo" aria-label="Nuovo viaggio">+</a>`;
+    el.innerHTML = `<div class="top"><h1 class="grow">Viaggi</h1></div>${body(c)}<a class="fab" href="#viaggio/nuovo" aria-label="Nuovo viaggio">${PLUS}</a>`;
   };
   draw(ctx);
   return { update: draw };

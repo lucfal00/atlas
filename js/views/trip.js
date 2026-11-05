@@ -91,7 +91,7 @@ export async function render(el, ctx) {
       host.className = 'map-wrap mini';
       map = createMap(host, {
         view: italy ? 'italia' : 'world', geo, interactive: false,
-        points: stops.map((p) => ({ id: p.id, lat: p.lat, lon: p.lon, state: placeState(cur.doc, p, cur.today) })),
+        points: stops.map((p) => ({ id: p.id, lat: p.lat, lon: p.lon, state: placeState(cur.doc, p, cur.today), partner: p.partner === true })),
         lines: [[home.lat, home.lon], ...stops.map((p) => [p.lat, p.lon]), [home.lat, home.lon]],
         fit: 'lines',
       });

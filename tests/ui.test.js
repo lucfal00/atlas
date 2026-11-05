@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fmtRange, parseNum } from '../js/ui.js';
+import { fmtRange, fmtMonths, parseNum } from '../js/ui.js';
 
 test('fmtRange: same month, same year, across years, single day', () => {
   assert.equal(fmtRange('2026-06-10', '2026-06-14'), '10–14 giu 2026');
@@ -17,4 +17,12 @@ test('parseNum: Italian and plain numbers, garbage → NaN', () => {
   for (const s of ['12abc', 'abc', '', '  ', '1,2,3', '1,234.5', '--1', '1e3', '12 €', '-5', null, undefined]) {
     assert.ok(Number.isNaN(parseNum(s)), String(s));
   }
+});
+
+test('fmtMonths: one month, same year, across years', () => {
+  assert.equal(fmtMonths('2024-03', '2024-03'), 'mar 2024');
+  assert.equal(fmtMonths('2024-03', null), 'mar 2024');
+  assert.equal(fmtMonths('2024-03', '2024-04'), 'mar–apr 2024');
+  assert.equal(fmtMonths('2023-12', '2024-01'), 'dic 2023 – gen 2024');
+  assert.equal(fmtMonths(null, null), '');
 });

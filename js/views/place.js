@@ -2,8 +2,8 @@
 // edit / delete. Country and region are never recomputed here.
 import * as store from '../store.js';
 import { createMap } from '../map.js';
-import { placeState } from '../logic.js';
-import { esc, catLabel, openSheet, toast, fmtFull, fmtRange } from '../ui.js';
+import { placeState, cleanScores } from '../logic.js';
+import { esc, catLabel, openSheet, toast, fmtMonths, fmtRange, starsHtml } from '../ui.js';
 
 const LABEL = { visited: 'Visitato', wish: 'Da visitare' };
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -46,12 +46,14 @@ export async function render(el, ctx) {
     return `<div class="top"><a class="back" href="#luoghi" aria-label="Luoghi">‹ Luoghi</a></div>
       <h1>${esc(p.name || 'Senza nome')}</h1>
       <p class="map-sheet-meta"><small>${esc(catLabel(p.cat))}</small> <span class="pill ${state}">${LABEL[state]}</span>`
-      + `${state === 'visited' && p.date ? `<small>${esc(fmtFull(p.date))}</small>` : ''}</p>
+      + `${state === 'visited' && p.from ? `<small>${esc(fmtMonths(p.from, p.to))}</small>` : ''}`
+      + `${state === 'visited' && p.partner ? '<span class="badge-partner">con la fidanzata</span>' : ''}</p>
       ${hasPos ? '<div data-map></div>' : ''}
       <div class="card">
         ${area ? `<p>${area}</p>` : ''}
         ${hasPos ? `<a class="btn" href="${esc(mapsUrl(p))}" target="_blank" rel="noopener">Apri in Mappe</a>` : '<p class="muted">Posizione non impostata.</p>'}
       </div>
+      ${state === 'visited' ? `<section class="card scores" data-scores><h2>Voti</h2>${starsHtml(cleanScores(p.scores) || {})}</section>` : ''}
       ${p.note ? `<section class="card"><h2>Nota</h2><p style="white-space:pre-wrap">${esc(p.note)}</p></section>` : ''}
       ${trips.length ? `<section><div class="section-head"><h2>Viaggi</h2></div><div class="card list"><ul class="rows">${trips.map((t) =>
         `<li><a class="row" href="#viaggio/${esc(encodeURIComponent(t.id))}"><span><b>${esc(t.title || 'Viaggio')}</b><small>${esc(fmtRange(t.from, t.to))}</small></span></a></li>`).join('')}</ul></div></section>` : ''}
@@ -76,7 +78,7 @@ export async function render(el, ctx) {
       host.className = 'map-wrap mini';
       map = createMap(host, {
         view, geo, interactive: false,
-        points: [{ id: p.id, lat: p.lat, lon: p.lon, state: placeState(cur.doc, p, cur.today) }],
+        points: [{ id: p.id, lat: p.lat, lon: p.lon, state: placeState(cur.doc, p, cur.today), partner: p.partner === true }],
         focus: { lat: p.lat, lon: p.lon, zoom: view === 'italia' ? 6 : 8 },
       });
     } else host?.remove();
@@ -109,10 +111,27 @@ export async function render(el, ctx) {
     };
   }
 
+  /** Tap = set, tap the same star = clear; saved at once (the change event redraws the page). */
+  async function setScore(key, n) {
+    const p = find(cur.doc);
+    if (!p) return;
+    const sc = { ...(cleanScores(p.scores) || {}) };
+    if (sc[key] === n) delete sc[key];
+    else sc[key] = n;
+    try {
+      await store.savePlace({ id: p.id, scores: cleanScores(sc) });
+    } catch (err) {
+      console.error(err);
+      toast('Impossibile salvare');
+    }
+  }
+
   draw();
 
   el.onclick = (e) => {
     if (e.target.closest('[data-act="delete"]')) confirmDelete();
+    const st = e.target.closest('[data-score]');
+    if (st) setScore(st.dataset.score, +st.dataset.n);
   };
 
   return {

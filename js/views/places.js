@@ -2,7 +2,7 @@
 // module scope so coming back to the tab shows the same list (no storage).
 import * as store from '../store.js';
 import { placeState, fold } from '../logic.js';
-import { esc, catLabel } from '../ui.js';
+import { esc, catLabel, fmtMonths, PLUS } from '../ui.js';
 
 const LABEL = { visited: 'Visitato', wish: 'Da visitare' };
 
@@ -27,13 +27,14 @@ export async function render(el, ctx) {
       <input type="search" data-q placeholder="Cerca per nome" aria-label="Cerca per nome" autocomplete="off">
     </div>
     <div data-list></div>
-    <a class="fab" href="#luogo/nuovo" aria-label="Nuovo luogo">+</a>`;
+    <a class="fab" href="#luogo/nuovo" aria-label="Nuovo luogo">${PLUS}</a>`;
   const q = el.querySelector('[data-q]');
   q.value = query;
 
   function row(p) {
     const state = placeState(cur.doc, p, cur.today);
-    const where = [catLabel(p.cat), p.country ? names.get(p.country) ?? p.country : ''].filter(Boolean).join(' · ');
+    const when = state === 'visited' ? fmtMonths(p.from, p.to) : '';
+    const where = [catLabel(p.cat), p.country ? names.get(p.country) ?? p.country : '', when].filter(Boolean).join(' · ');
     return `<li><a class="row" href="#luogo/${esc(encodeURIComponent(p.id))}"><span class="badge" aria-hidden="true">${esc(catLabel(p.cat).charAt(0))}</span>`
       + `<span><b>${esc(p.name || 'Senza nome')}</b><small>${esc(where)}</small></span><span class="pill ${state}">${LABEL[state]}</span></a></li>`;
   }

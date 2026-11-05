@@ -40,7 +40,7 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#impostazioni`, `#luogo/<id>`, `#l
 - **Scheda**: nome, categoria, stato, data (se visitato), nota, mini mappa, paese / regione, **Apri in Mappe** (Apple Maps su iPhone, Google Maps altrove),
   viaggi che includono il luogo, **Modifica**, **Elimina** (conferma).
 - **Nuovo/Modifica**: nome (obbligatorio, max 60), categoria (`citta`, `borgo`, `natura`, `mare`, `montagna`, `cultura`, `ristorante`, `locale`, `alloggio`, `esperienza`, `altro`),
-  stato `visited` | `wish`, data facoltativa (solo se visitato), nota, posizione con tre modi: **Cerca** per nome (online, §7.4), tocco sulla mini mappa, **Posizione attuale**.
+  stato `visited` | `wish`, mesi `from`/`to` (`YYYY-MM`, solo se visitato), `partner` (con la fidanzata, punto blu), `scores` (voti 1–5 per cibo, cultura, paesaggio, atmosfera, prezzi, solo se visitato), nota. Un solo campo **Luogo** (è il nome) con **Cerca** (online, §7.4); posizione anche con tocco sulla mini mappa. Punti sulla mappa: bianco/nero, blu se con la fidanzata.
   Paese e regione sono calcolati alla scelta della posizione (§7.3) e modificabili (la regione solo per l'Italia).
 
 ### 3.3 Viaggi
@@ -64,7 +64,7 @@ Il documento viene caricato all'avvio, tenuto in memoria e salvato a ogni modifi
 ```json
 {
   "version": 1,
-  "places": [{ "id": "l_ab12cd", "name": "Positano", "cat": "borgo", "status": "visited", "date": "2024-08-15",
+  "places": [{ "id": "l_ab12cd", "name": "Positano", "cat": "borgo", "status": "visited", "from": "2024-08", "to": "2024-08", "partner": false, "scores": { "cibo": 5 },
     "note": "", "lat": 40.628, "lon": 14.485, "country": "IT", "region": "Campania",
     "deleted": false, "updatedAt": 1798364400000 }],
   "trips": [{ "id": "v_ab12cd", "title": "Costiera", "from": "2026-06-10", "to": "2026-06-14",
@@ -76,12 +76,12 @@ Il documento viene caricato all'avvio, tenuto in memoria e salvato a ogni modifi
 ```
 
 - **id**: prefisso + 6 caratteri base36 casuali (`l_` luogo, `v_` viaggio). Date locali `YYYY-MM-DD`, mai UTC; `t`/`updatedAt`: millisecondi epoch.
-- **places**: `status` `visited` | `wish`; `date` solo se visitato, facoltativa; `country` codice paese, `region` nome regione o `null` (fuori Italia `null`).
+- **places**: `status` `visited` | `wish`; `from`/`to` mesi `YYYY-MM` (`to` ≥ `from`), `partner` booleano, `scores` oggetto 1–5, tutti facoltativi e solo se visitato; `country` codice paese, `region` nome regione o `null` (fuori Italia `null`).
 - **trips**: `from ≤ to`; `spend` euro ≥ 0 o `null`; `stops[]` = `{ place }`.
 - **marks**: chiavi `c:<codice paese>`, `r:<nome regione>`; `s` `visited` oppure `null` (segno tolto; la chiave resta per il merge).
 - Soft delete (`deleted: true`) per luoghi e viaggi; gli oggetti restano per il merge.
 - **Documenti vecchi**: i campi sconosciuti (voto, tag, costi, diario, province…) sono ignorati da `validateDoc` e scartati da `sanitizeDoc`
-  (import, sync, avvio), che mappa anche `planned` → `wish`, l'ultima visita → `date`, la somma dei costi → `spend`. Mai errori per campi extra.
+  (import, sync, avvio), che mappa anche `planned` → `wish`, `date`/l'ultima visita → `from`=`to` (mese), la somma dei costi → `spend`. Mai errori per campi extra.
 - All'avvio: `navigator.storage.persist()`.
 
 ## 5. Regole (`logic.js`, funzioni pure)
