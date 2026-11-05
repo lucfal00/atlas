@@ -47,7 +47,7 @@ export const gunzip = (bytes) => through(new DecompressionStream('gzip'), bytes)
 
 // ---- document envelope -------------------------------------------------
 
-/** Encrypt obj into the JSON envelope stored in atlas.json: AES-GCM of gzip(JSON). */
+/** Encrypt obj into the JSON envelope stored in the gist file atlas-sync.json: AES-GCM of gzip(JSON). */
 export async function seal(key, salt, iterations, obj) {
   const iv = randomBytes(12);
   const packed = await gzip(enc.encode(JSON.stringify(obj)));

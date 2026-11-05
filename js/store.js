@@ -24,7 +24,7 @@ let doc = emptyDoc();
 let notice = '';          // banner message
 let persistent = false;   // the database opened: without it nothing is saved
 
-let cfg = null;           // { token, owner, repo, salt, iterations, key, at } (meta.sync)
+let cfg = null;           // { token, gistId, salt, iterations, key, at } (meta.sync)
 let sync = { state: 'off', message: '', at: 0 };   // off | idle | syncing | offline | paused | error
 let syncTimer = 0;
 let rateTimer = 0;
@@ -317,9 +317,9 @@ async function adopt(incoming) {
   await persist();
 }
 
-/** Link this device → { count } (items updated from the repository). Throws SyncError (wrong password, bad token…). */
-export async function connectSync(token, repo, password) {
-  const r = await connect({ token: token.trim(), repo: (repo || '').trim() || 'atlas-data', password, local: doc, fetchFn });
+/** Link this device → { count } (items updated from the gist). Throws SyncError (wrong password, bad token…). */
+export async function connectSync(token, password) {
+  const r = await connect({ token: token.trim(), password, local: doc, fetchFn });
   cfg = { ...r.cfg, at: Date.now() };
   await storeCfg();
   await adopt(r.doc);

@@ -23,15 +23,14 @@ I dati restano nel browser (IndexedDB) del dispositivo. Con la sincronizzazione 
 
 ## Sincronizzazione (facoltativa)
 
-I dati vengono cifrati sul dispositivo (AES-GCM, chiave derivata dalla password con PBKDF2) e inviati a un repository GitHub **privato**. Senza password il contenuto non è leggibile.
+I dati vengono cifrati sul dispositivo (AES-GCM, chiave derivata dalla password con PBKDF2) e salvati in un Gist **segreto** sul tuo account GitHub. Senza password il contenuto non è leggibile.
 
-1. Su GitHub crea un repository **privato** chiamato `atlas-data` (vuoto).
-2. Crea un token a grana fine (Settings, Developer settings, Fine-grained tokens):
-   - accesso **solo** al repository `atlas-data`;
-   - permesso **Contents: Read and write**;
-   - una scadenza (quando scade, l'app avvisa e ne crei uno nuovo).
-3. In Atlas apri Impostazioni, sezione Sincronizzazione: incolla il token, controlla il nome del repository e scegli una password di cifratura (almeno 8 caratteri).
-4. Su ogni altro dispositivo ripeti il collegamento con lo **stesso repository e la stessa password**: i dati si uniscono (vince la modifica più recente di ogni elemento).
+1. Crea un token: <https://github.com/settings/tokens/new?scopes=gist&description=Atlas%20sync>
+   - lascia spuntato solo **gist**;
+   - scegli la scadenza (quando scade, l'app avvisa e ne crei uno nuovo);
+   - **Generate token** e copia il codice `ghp_…`.
+2. In Atlas apri Impostazioni, sezione Sincronizzazione: incolla il token e scegli una password di cifratura (almeno 8 caratteri). Al primo collegamento Atlas crea il Gist segreto (file `atlas-sync.json`); non tocca gli altri tuoi Gist, nemmeno quelli di Habits e Fitness.
+3. Su ogni altro dispositivo ripeti il collegamento con **lo stesso token e la stessa password**: i dati si uniscono (vince la modifica più recente di ogni elemento).
 
 Il token resta solo su quel dispositivo e non viene mai incluso nei backup. Se perdi la password i dati cifrati non sono recuperabili: tieni un backup.
 

@@ -5,7 +5,7 @@ import {
   seal, parseEnvelope, unseal, gzip, gunzip,
 } from '../js/crypto.js';
 import {
-  SyncError, makeRepoApi, connect, syncOnce,
+  SyncError, makeApi, connect, syncOnce,
 } from '../js/sync.js';
 import { emptyDoc } from '../js/logic.js';
 import { validateDoc } from '../js/merge.js';
@@ -13,15 +13,11 @@ import { validateDoc } from '../js/merge.js';
 // ---- constants and builders --------------------------------------------
 
 const enc = new TextEncoder();
-const dec = new TextDecoder();
 
-const TOKEN = 'github_pat_test';
-const OWNER = 'luca-test';
-const REPO = 'atlas-data';
+const TOKEN = 'ghp_test';
+const FILE = 'atlas-sync.json';
 const PASSWORD = 'correct horse battery';
 const RESET = 1893456000; // x-ratelimit-reset (seconds)
-const JSON_ACCEPT = 'application/vnd.github+json';
-const OBJECT = 'application/vnd.github.object+json';
 
 const place = (id, updatedAt, extra = {}) => ({ id, name: id, status: 'wish', deleted: false, updatedAt, ...extra });
 const docWith = (parts = {}) => ({ ...emptyDoc(), ...parts });
@@ -38,82 +34,74 @@ const rejectsSync = (promise, code, message) => assert.rejects(promise, (e) => {
   return true;
 });
 
-// ---- fake GitHub -------------------------------------------------------
+// ---- fake GitHub gists -------------------------------------------------
 
 const reply = (status, body, headers = {}) => new Response(
   body === undefined ? null : JSON.stringify(body),
   { status, headers: { 'content-type': 'application/json', ...headers } },
 );
-const notFound = () => reply(404, { message: 'Not Found' });
-/** GitHub wraps base64 `content` every 60 characters. */
-const wrap = (bytes) => `${Buffer.from(bytes).toString('base64').replace(/(.{60})/g, '$1\n')}\n`;
 
 /**
- * In-memory GitHub: GET /user, GET /repos/o/r, contents GET/PUT/DELETE (sha checks), git/blobs, raw Accept.
- * `repo` = Map path → {sha, bytes}; sha = incrementing counter. `hook(req)` may return a Response to replace the answer.
+ * In-memory gists API: list, get, commits (revision), create, patch, raw. `gists` = Map id → {description, files, rev}.
+ * `hook(req)` may return a Response to replace the answer. `truncateOver`: files longer than this come truncated.
  */
-function makeGithub({ files = [], counter = 0, inlineLimit = 1e6, size = 42 } = {}) {
-  const repo = new Map(files.map(([p, f]) => [p, { sha: f.sha, bytes: f.bytes.slice() }]));
-  const base = `/repos/${OWNER}/${REPO}`;
+function makeGithub({ gists = [], counter = 0, truncateOver = 1e6 } = {}) {
+  const store = new Map(gists.map(([id, g]) => [id, { ...g, files: { ...g.files } }]));
   const gh = {
-    repo, calls: [], hook: null, offline: false, inlineLimit,
-    put(path, bytes) {
-      const sha = String(++counter);
-      repo.set(path, { sha, bytes: Uint8Array.from(bytes) });
-      return sha;
+    store, calls: [], hook: null, offline: false,
+    add(id, files, description = '') {
+      store.set(id, { description, files, rev: String(++counter) });
     },
-    snapshot: () => ({ files: [...repo], counter }),
-    reqs: (method, path) => gh.calls.filter((c) => c.method === method && c.path.endsWith(path)),
+    setContent(id, content, name = FILE) {
+      const g = store.get(id);
+      g.files[name] = { content };
+      g.rev = String(++counter);
+    },
+    snapshot: () => ({ gists: [...store], counter }),
+    reqs: (method, path) => gh.calls.filter((c) => c.method === method && c.path.startsWith(path)),
   };
+  const view = (id, g) => ({
+    id, description: g.description, updated_at: `t${g.rev}`, history: [{ version: g.rev }],
+    files: Object.fromEntries(Object.entries(g.files).map(([n, f]) => {
+      const big = f.content.length > truncateOver;
+      return [n, { filename: n, truncated: big, content: big ? f.content.slice(0, 10) : f.content, raw_url: `https://gist.githubusercontent.com/raw/${id}/${n}` }];
+    })),
+  });
 
-  function contents(req, file) {
-    const cur = repo.get(file);
-    if (req.method === 'GET') {
-      if (!cur) return notFound();
-      // like GitHub, a file of 1–100 MB is only served through the raw or the object media type
-      if (req.headers.Accept !== OBJECT) return reply(415, { message: 'Unsupported Media Type' });
-      const big = cur.bytes.length > gh.inlineLimit;
-      return reply(200, {
-        type: 'file', path: file, sha: cur.sha, size: cur.bytes.length,
-        encoding: big ? 'none' : 'base64', content: big ? '' : wrap(cur.bytes),
-      });
+  function route(req) {
+    const { path, method } = req;
+    if (path.startsWith('/raw/')) {
+      const [, , id, name] = path.split('/');
+      return new Response(store.get(id).files[name].content, { status: 200 });
     }
-    if (req.method === 'PUT') {
-      const { content, sha } = req.body;
-      if (!cur && sha !== undefined) return reply(422, { message: 'Invalid request.' });
-      if (cur && sha === undefined) return reply(422, { message: 'Invalid request. "sha" wasn\'t supplied.' });
-      if (cur && sha !== cur.sha) return reply(409, { message: `${file} does not match ${sha}` });
-      const newSha = gh.put(file, Buffer.from(content, 'base64'));
-      return reply(cur ? 200 : 201, { content: { path: file, sha: newSha }, commit: { message: req.body.message } });
+    if (path === '/gists' && method === 'GET') {
+      const per = Number(new URL(req.url).searchParams.get('per_page'));
+      const page = Number(new URL(req.url).searchParams.get('page') || 1);
+      const all = [...store].map(([id, g]) => view(id, g));
+      return reply(200, all.slice((page - 1) * per, page * per));
     }
-    if (req.method === 'DELETE') {
-      if (!cur) return notFound();
-      if (req.body.sha !== cur.sha) return reply(409, { message: 'does not match' });
-      repo.delete(file);
-      return reply(200, { commit: {} });
+    if (path === '/gists' && method === 'POST') {
+      const id = `g${++counter}`;
+      store.set(id, { description: req.body.description, files: { ...req.body.files }, rev: String(++counter), public: req.body.public });
+      return reply(201, { id });
+    }
+    const m = path.match(/^\/gists\/([^/]+)(\/commits)?$/);
+    const g = m && store.get(m[1]);
+    if (!g) return reply(404, { message: 'Not Found' });
+    if (m[2]) return reply(200, [{ version: g.rev }]);
+    if (method === 'GET') return reply(200, view(m[1], g));
+    if (method === 'PATCH') {
+      Object.assign(g.files, req.body.files);
+      g.rev = String(++counter);
+      return reply(200, view(m[1], g));
     }
     return reply(405, {});
   }
 
-  function route(req) {
-    const { path } = req;
-    if (path === '/user') return reply(200, { login: OWNER });
-    if (path === base) return reply(200, { name: REPO, size });
-    if (path.startsWith(`${base}/git/blobs/`)) {
-      const sha = path.slice(`${base}/git/blobs/`.length);
-      const f = [...repo.values()].find((x) => x.sha === sha);
-      return f ? reply(200, { sha, size: f.bytes.length, encoding: 'base64', content: wrap(f.bytes) }) : notFound();
-    }
-    if (path.startsWith(`${base}/contents/`)) {
-      const file = path.slice(`${base}/contents/`.length).split('/').map(decodeURIComponent).join('/');
-      return contents(req, file);
-    }
-    return notFound();
-  }
-
   gh.fetch = async (url, init = {}) => {
+    const u = new URL(url);
     const req = {
-      method: init.method ?? 'GET', url, path: new URL(url).pathname,
+      method: init.method ?? 'GET', url, path: u.pathname,
       headers: init.headers ?? {}, cache: init.cache,
       body: init.body === undefined ? undefined : JSON.parse(init.body),
     };
@@ -125,18 +113,19 @@ function makeGithub({ files = [], counter = 0, inlineLimit = 1e6, size = 42 } = 
   return gh;
 }
 
-/** Another device writes this document to atlas.json, sealed with the cfg key. */
+/** The id of the Atlas gist in the fake. */
+const atlasId = (gh) => [...gh.store].find(([, g]) => g.files[FILE])[0];
+
+/** Another device writes this document to the Atlas gist, sealed with the cfg key. */
 async function remoteWrite(gh, cfg, doc) {
-  const text = await seal(await importKey(cfg.key), fromB64(cfg.salt), cfg.iterations, doc);
-  return gh.put('atlas.json', enc.encode(text));
+  gh.setContent(cfg.gistId, await seal(await importKey(cfg.key), fromB64(cfg.salt), cfg.iterations, doc));
 }
 
 async function remoteDoc(gh, cfg) {
-  const env = parseEnvelope(dec.decode(gh.repo.get('atlas.json').bytes));
-  return unseal(await importKey(cfg.key), env);
+  return unseal(await importKey(cfg.key), parseEnvelope(gh.store.get(cfg.gistId).files[FILE].content));
 }
 
-/** atlas.json text sealed with the cfg key around arbitrary plaintext bytes (not through seal()); `patch` overrides envelope fields. */
+/** Gist text sealed with the cfg key around arbitrary plaintext bytes (not through seal()); `patch` overrides envelope fields. */
 async function rawEnvelope(cfg, plain, patch = {}) {
   const iv = randomBytes(12);
   const data = await globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await importKey(cfg.key), plain);
@@ -146,11 +135,11 @@ async function rawEnvelope(cfg, plain, patch = {}) {
   });
 }
 
-/** Repository + cfg of a device that has connected once (one PBKDF2 derivation for the whole file). */
+/** Gists + cfg of a device that has connected once (one PBKDF2 derivation for the whole file). */
 let baseP;
 const base = () => (baseP ??= (async () => {
   const gh = makeGithub();
-  const { cfg } = await connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docA, fetchFn: gh.fetch });
+  const { cfg } = await connect({ token: TOKEN, password: PASSWORD, local: docA, fetchFn: gh.fetch });
   return { snap: gh.snapshot(), cfg };
 })());
 
@@ -275,205 +264,176 @@ test('gzip/gunzip: round trip, real compression, garbage rejected', async () => 
   await assert.rejects(gunzip(randomBytes(64)));
 });
 
-// ---- makeRepoApi -------------------------------------------------------
+// ---- makeApi -----------------------------------------------------------
 
 test('api: every request carries the auth, version and no-store headers', async () => {
   const gh = makeGithub();
-  gh.put('atlas.json', enc.encode('hi'));
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  assert.equal(await api.getUser(), OWNER);
-  await api.repoSize(OWNER, REPO);
-  await api.getFile(OWNER, REPO, 'atlas.json');
-  await api.putFile(OWNER, REPO, 'b.bin', enc.encode('x'), undefined, 'msg');
-  assert.equal(gh.calls.length, 4);
+  const api = makeApi(TOKEN, gh.fetch);
+  assert.equal(await api.findGist(), null);
+  const id = await api.create('hello');
+  await api.read(id);
+  await api.version(id);
+  await api.write(id, 'bye');
+  assert.equal(gh.calls.length, 5);
   for (const c of gh.calls) {
     assert.ok(c.url.startsWith('https://api.github.com/'));
     assert.equal(c.headers.Authorization, `Bearer ${TOKEN}`);
+    assert.equal(c.headers.Accept, 'application/vnd.github+json');
     assert.equal(c.headers['X-GitHub-Api-Version'], '2022-11-28');
     assert.equal(c.cache, 'no-store');
   }
-  assert.equal(gh.calls[0].headers.Accept, JSON_ACCEPT);
-  assert.equal(gh.calls[1].headers.Accept, JSON_ACCEPT);
-  assert.equal(gh.calls[2].headers.Accept, OBJECT, 'getFile: object media type, works for 1–100 MB files');
-  assert.equal(gh.calls[3].headers.Accept, JSON_ACCEPT);
 });
 
-test('api: getFile decodes wrapped base64, returns null on 404, encodes each path segment', async () => {
+test('api: create makes a SECRET gist with the Atlas file only; write patches only that file', async () => {
   const gh = makeGithub();
-  const bytes = randomBytes(500);
-  const sha = gh.put('dir/a b.bin', bytes);
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  const f = await api.getFile(OWNER, REPO, 'dir/a b.bin');
-  assert.equal(f.sha, sha);
-  assert.deepEqual(f.bytes, bytes);
-  assert.ok(gh.calls[0].url.endsWith('/contents/dir/a%20b.bin'));
-  assert.equal(await api.getFile(OWNER, REPO, 'nope.json'), null);
+  const api = makeApi(TOKEN, gh.fetch);
+  const id = await api.create('uno');
+  const post = gh.reqs('POST', '/gists')[0];
+  assert.equal(post.body.public, false);
+  assert.deepEqual(Object.keys(post.body.files), [FILE]);
+  assert.match(post.body.description, /Atlas/);
+  await api.write(id, 'due');
+  assert.deepEqual(Object.keys(gh.reqs('PATCH', `/gists/${id}`)[0].body.files), [FILE]);
+  assert.deepEqual(await api.read(id), { text: 'due', version: gh.store.get(id).rev });
 });
 
-test('api: content missing (file > 1 MB) → read through git/blobs/{sha}', async () => {
-  const gh = makeGithub({ inlineLimit: 100 });
-  const bytes = randomBytes(5000);
-  const sha = gh.put('atlas.json', bytes);
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  const f = await api.getFile(OWNER, REPO, 'atlas.json');
-  assert.equal(f.sha, sha);
-  assert.deepEqual(f.bytes, bytes);
-  assert.equal(gh.reqs('GET', `/git/blobs/${sha}`).length, 1);
-});
-
-test('api: putFile body and result, repoSize', async () => {
-  const gh = makeGithub({ size: 1234 });
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  const bytes = randomBytes(100);
-  const sha1 = await api.putFile(OWNER, REPO, 'x.bin', bytes, undefined, 'first');
-  assert.equal(gh.repo.get('x.bin').sha, sha1);
-  const put = gh.calls.at(-1);
-  assert.equal(put.method, 'PUT');
-  assert.equal(put.body.message, 'first');
-  assert.equal(put.body.content, Buffer.from(bytes).toString('base64'));
-  assert.ok(!('sha' in put.body));
-  const sha2 = await api.putFile(OWNER, REPO, 'x.bin', randomBytes(10), sha1, 'second');
-  assert.notEqual(sha2, sha1);
-  assert.equal(gh.calls.at(-1).body.sha, sha1);
-  assert.equal(await api.repoSize(OWNER, REPO), 1234);
-});
-
-test('api: PUT 409 → conflict; PUT 422 → http with status 422; unknown repo → missing', async () => {
+test('api: findGist matches only the Atlas file, never the gists of Habits or Fitness', async () => {
   const gh = makeGithub();
-  gh.put('x.bin', randomBytes(4));
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  await rejectsSync(api.putFile(OWNER, REPO, 'x.bin', randomBytes(4), 'old', 'm'), 'conflict', 'Riprova più tardi');
-  await assert.rejects(api.putFile(OWNER, REPO, 'x.bin', randomBytes(4), undefined, 'm'), (e) => {
-    assert.ok(e instanceof SyncError);
-    assert.equal(e.code, 'http');
-    assert.equal(e.status, 422);
-    return true;
-  });
-  await rejectsSync(makeRepoApi(TOKEN, gh.fetch).repoSize('altro', 'repo'), 'missing', 'Repository non trovato');
-  await rejectsSync(api.putFile('altro', 'repo', 'x', randomBytes(1), undefined, 'm'), 'missing');
+  gh.add('h1', { 'habits-sync.json': { content: 'x' } }, 'Habits – dati sincronizzati (cifrati)');
+  gh.add('f1', { 'fitness-sync.json': { content: 'x' } }, 'Fitness – dati sincronizzati (cifrati)');
+  gh.add('o1', { 'note.txt': { content: 'x' } }, 'Atlas notes');
+  const api = makeApi(TOKEN, gh.fetch);
+  assert.equal(await api.findGist(), null);
+  gh.add('a1', { [FILE]: { content: 'x' } });
+  assert.equal(await api.findGist(), 'a1');
+});
+
+test('api: findGist follows the pages of the list', async () => {
+  const gh = makeGithub();
+  for (let i = 0; i < 100; i++) gh.add(`o${i}`, { 'note.txt': { content: 'x' } });
+  gh.add('a1', { [FILE]: { content: 'x' } });
+  assert.equal(await makeApi(TOKEN, gh.fetch).findGist(), 'a1');
+  assert.equal(gh.reqs('GET', '/gists').length, 2);
+});
+
+test('api: truncated file is read from raw_url without the token', async () => {
+  const gh = makeGithub({ truncateOver: 100 });
+  const api = makeApi(TOKEN, gh.fetch);
+  const text = 'z'.repeat(5000);
+  const id = await api.create(text);
+  assert.equal((await api.read(id)).text, text);
+  const raw = gh.calls.at(-1);
+  assert.ok(raw.url.startsWith('https://gist.githubusercontent.com/'));
+  assert.equal(raw.headers.Authorization, undefined);
+});
+
+test('api: gist without the Atlas file, or unknown gist → missing', async () => {
+  const gh = makeGithub();
+  gh.add('x1', { 'other.txt': { content: 'x' } });
+  const api = makeApi(TOKEN, gh.fetch);
+  await rejectsSync(api.read('x1'), 'missing', 'Gist di sincronizzazione non trovato: scollega e ricollega');
+  await rejectsSync(api.read('nope'), 'missing');
+  await rejectsSync(api.write('nope', 'x'), 'missing');
 });
 
 const ERRORS = [
   ['401 → token', () => reply(401, {}), 'token', 'Token non valido o scaduto'],
-  ['403 → forbidden', () => reply(403, {}), 'forbidden', 'Il token non ha accesso al repository'],
+  ['403 → forbidden', () => reply(403, {}), 'forbidden', 'Accesso ai gist negato: il token deve avere lo scope gist'],
   ['403 with x-ratelimit-remaining 0 → rate', () => reply(403, {}, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(RESET) }),
     'rate', 'Limite di richieste GitHub raggiunto'],
   ['429 → rate', () => reply(429, {}, { 'x-ratelimit-reset': String(RESET) }), 'rate', 'Limite di richieste GitHub raggiunto'],
-  ['404 → missing', () => reply(404, {}), 'missing', 'Repository non trovato'],
   ['500 → http', () => reply(500, {}), 'http', 'Errore GitHub 500'],
 ];
 for (const [name, make, code, message] of ERRORS) {
   test(`api: ${name}`, async () => {
     const gh = makeGithub();
     gh.hook = make;
-    await rejectsSync(makeRepoApi(TOKEN, gh.fetch).getUser(), code, message);
+    await rejectsSync(makeApi(TOKEN, gh.fetch).findGist(), code, message);
   });
 }
 
 test('api: rate limit carries resetAt in ms; a 403 with remaining > 0 is not a rate limit', async () => {
   const gh = makeGithub();
   gh.hook = () => reply(403, {}, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(RESET) });
-  await assert.rejects(makeRepoApi(TOKEN, gh.fetch).getUser(), (e) => e.code === 'rate' && e.resetAt === RESET * 1000);
+  await assert.rejects(makeApi(TOKEN, gh.fetch).findGist(), (e) => e.code === 'rate' && e.resetAt === RESET * 1000);
   gh.hook = () => reply(403, {}, { 'x-ratelimit-remaining': '4999', 'x-ratelimit-reset': String(RESET) });
-  await rejectsSync(makeRepoApi(TOKEN, gh.fetch).getUser(), 'forbidden');
+  await rejectsSync(makeApi(TOKEN, gh.fetch).findGist(), 'forbidden');
 });
 
-test('api: secondary rate limit (403 or 429 with retry-after) → rate with resetAt', async () => {
+test('api: secondary rate limit (retry-after) and no reset header → resetAt about now + wait', async () => {
   const gh = makeGithub();
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  for (const status of [403, 429]) {
-    gh.hook = () => reply(status, {}, { 'retry-after': '60' });
-    const t0 = Date.now();
-    await assert.rejects(api.getUser(), (e) => {
-      assert.equal(e.code, 'rate');
-      assert.ok(e.resetAt >= t0 + 60000 && e.resetAt <= Date.now() + 60000);
-      return true;
-    });
-  }
-});
-
-test('api: rate limit with neither x-ratelimit-reset nor retry-after → resetAt = now + 60 s', async () => {
-  const gh = makeGithub();
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  const cases = [reply(429, {}), reply(403, {}, { 'x-ratelimit-remaining': '0' })];
-  for (const answer of cases) {
+  const api = makeApi(TOKEN, gh.fetch);
+  const cases = [[reply(403, {}, { 'retry-after': '60' }), 60000], [reply(429, {}), 60000],
+    [reply(403, {}, { 'x-ratelimit-remaining': '0' }), 60000]];
+  for (const [answer, wait] of cases) {
     gh.hook = () => answer.clone();
     const t0 = Date.now();
-    await assert.rejects(api.getUser(), (e) => {
+    await assert.rejects(api.findGist(), (e) => {
       assert.equal(e.code, 'rate');
-      assert.ok(Number.isFinite(e.resetAt), 'resetAt is set');
-      assert.ok(e.resetAt >= t0 + 60000 && e.resetAt <= Date.now() + 60000, `resetAt ${e.resetAt - t0} ms ahead`);
+      assert.ok(e.resetAt >= t0 + wait && e.resetAt <= Date.now() + wait, `resetAt ${e.resetAt - t0} ms ahead`);
       return true;
     });
   }
 });
 
-test('api: a 200 body that is not JSON → network', async () => {
+test('api: a 200 body that is not JSON, or that errors while read → network', async () => {
   const gh = makeGithub();
-  const api = makeRepoApi(TOKEN, gh.fetch);
+  const api = makeApi(TOKEN, gh.fetch);
   gh.hook = () => new Response('<html>captive portal</html>', { status: 200 });
-  await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
-  await rejectsSync(api.getFile(OWNER, REPO, 'atlas.json'), 'network');
-});
-
-test('api: a body that errors while it is read (connection dropped) → network', async () => {
-  const gh = makeGithub();
-  gh.put('atlas.json', randomBytes(10));
-  const api = makeRepoApi(TOKEN, gh.fetch);
+  await rejectsSync(api.findGist(), 'network', 'Rete non disponibile');
   gh.hook = () => new Response(new ReadableStream({ start: (c) => c.error(new TypeError('terminated')) }), { status: 200 });
-  await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
-  await rejectsSync(api.getFile(OWNER, REPO, 'atlas.json'), 'network');
+  await rejectsSync(api.findGist(), 'network', 'Rete non disponibile');
 });
 
 test('api: fetch that throws → network', async () => {
   const gh = makeGithub();
   gh.offline = true;
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
-  await rejectsSync(api.getFile(OWNER, REPO, 'a'), 'network');
-  await rejectsSync(api.putFile(OWNER, REPO, 'a', randomBytes(1), undefined, 'm'), 'network');
+  const api = makeApi(TOKEN, gh.fetch);
+  await rejectsSync(api.findGist(), 'network', 'Rete non disponibile');
+  await rejectsSync(api.read('a'), 'network');
+  await rejectsSync(api.write('a', 'x'), 'network');
 });
 
 // ---- connect -----------------------------------------------------------
 
-test('connect: empty repository → creates atlas.json (valid envelope, unreadable), PUT without sha', async () => {
+test('connect: no Atlas gist → creates a secret one (valid envelope, unreadable)', async () => {
   const gh = makeGithub();
-  const r = await connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docA, fetchFn: gh.fetch });
-  assert.deepEqual(Object.keys(r.cfg).sort(), ['iterations', 'key', 'owner', 'repo', 'salt', 'token']);
+  gh.add('h1', { 'habits-sync.json': { content: 'habits data' } });
+  const r = await connect({ token: TOKEN, password: PASSWORD, local: docA, fetchFn: gh.fetch });
+  assert.deepEqual(Object.keys(r.cfg).sort(), ['gistId', 'iterations', 'key', 'salt', 'token']);
   assert.equal(r.cfg.token, TOKEN);
-  assert.equal(r.cfg.owner, OWNER);
-  assert.equal(r.cfg.repo, REPO);
   assert.equal(r.cfg.iterations, ITERATIONS);
   assert.equal(fromB64(r.cfg.salt).length, 16);
   assert.ok(!JSON.stringify(r.cfg).includes(PASSWORD), 'the password is never stored');
   assert.deepEqual(r.doc, docA);
   assert.equal(r.count, 0);
 
-  const puts = gh.reqs('PUT', '/contents/atlas.json');
-  assert.equal(puts.length, 1);
-  assert.ok(!('sha' in puts[0].body));
-  const text = dec.decode(gh.repo.get('atlas.json').bytes);
+  assert.equal(gh.reqs('POST', '/gists').length, 1);
+  assert.equal(gh.reqs('POST', '/gists')[0].body.public, false);
+  assert.equal(r.cfg.gistId, atlasId(gh));
+  const text = gh.store.get(r.cfg.gistId).files[FILE].content;
   assert.ok(!text.includes('Dublino'));
   const env = parseEnvelope(text);
   assert.equal(env.app, 'atlas');
   assert.equal(env.z, 'gzip');
   assert.equal(env.kdf.name, 'PBKDF2-SHA256');
-  assert.equal(env.kdf.iterations, ITERATIONS);
   assert.equal(env.kdf.salt, r.cfg.salt);
   assert.deepEqual(await unseal(await importKey(r.cfg.key), env), docA);
+  // the other apps' gists are untouched
+  assert.equal(gh.store.get('h1').files['habits-sync.json'].content, 'habits data');
+  assert.equal(gh.calls.filter((c) => c.method !== 'GET' && !c.path.startsWith('/gists/g')).length, 1);
 });
 
 test('connect: second device with the same password merges the data and pushes its news', async () => {
   const { gh, cfg: cfgA } = await fresh();
-  const before = gh.repo.get('atlas.json').sha;
-  const r = await connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch });
+  const r = await connect({ token: TOKEN, password: PASSWORD, local: docB, fetchFn: gh.fetch });
   assert.deepEqual(ids(r.doc), ['l_a', 'l_b']);
   assert.equal(r.count, 1);
+  assert.equal(r.cfg.gistId, cfgA.gistId);
   assert.equal(r.cfg.key, cfgA.key, 'same password and salt → same key');
   assert.equal(r.cfg.salt, cfgA.salt);
-  const puts = gh.reqs('PUT', '/contents/atlas.json');
-  assert.equal(puts.length, 1);
-  assert.equal(puts[0].body.sha, before);
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 1);
+  assert.equal(gh.reqs('POST', '/gists').length, 0, 'no second gist');
   assert.deepEqual(ids(await remoteDoc(gh, r.cfg)), ['l_a', 'l_b']);
   // the first device now receives what the second added
   const back = await syncOnce({ cfg: cfgA, local: docA, fetchFn: gh.fetch });
@@ -484,117 +444,59 @@ test('connect: second device with the same password merges the data and pushes i
 test('connect: wrong password → password error, nothing written', async () => {
   const { gh } = await fresh();
   await rejectsSync(
-    connect({ token: TOKEN, repo: REPO, password: 'password sbagliata', local: docB, fetchFn: gh.fetch }),
+    connect({ token: TOKEN, password: 'password sbagliata', local: docB, fetchFn: gh.fetch }),
     'password', 'Password errata',
   );
   assert.equal(gh.calls.filter((c) => c.method !== 'GET').length, 0);
 });
 
-test('connect: another device creates atlas.json first (422) → adopts its salt and iterations, not a false "Password errata"', async () => {
+test('connect: bad token → token; rate limit → rate', async () => {
   const gh = makeGithub();
-  // the other device: same password, different salt, cheaper KDF so that the test stays fast
-  const otherSalt = randomBytes(16);
-  const otherKey = await deriveKey(PASSWORD, otherSalt, 1000);
-  const otherText = await seal(otherKey, otherSalt, 1000, docA);
-  let otherSha;
-  gh.hook = (req) => {
-    if (req.method === 'PUT' && req.path.endsWith('/atlas.json') && otherSha === undefined) {
-      otherSha = gh.put('atlas.json', enc.encode(otherText)); // between our read (absent) and our PUT
-    }
-    return undefined;
-  };
-
-  const r = await connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch });
-  assert.equal(r.cfg.salt, toB64(otherSalt), 'cfg carries the remote salt');
-  assert.equal(r.cfg.iterations, 1000, 'cfg carries the remote iterations');
-  assert.equal(r.cfg.key, await exportKey(otherKey));
-  assert.deepEqual(ids(r.doc), ['l_a', 'l_b']);
-  assert.equal(r.count, 1);
-
-  const puts = gh.reqs('PUT', '/contents/atlas.json');
-  assert.equal(puts.length, 2);
-  assert.ok(!('sha' in puts[0].body), 'first attempt creates the file');
-  assert.equal(puts[1].body.sha, otherSha, 'the retry updates the other device\'s file');
-  const env = parseEnvelope(dec.decode(gh.repo.get('atlas.json').bytes));
-  assert.equal(env.kdf.salt, toB64(otherSalt));
-  assert.equal(env.kdf.iterations, 1000);
-  assert.deepEqual(ids(await remoteDoc(gh, r.cfg)), ['l_a', 'l_b']);
-  // the returned cfg is coherent: a later sync with it needs nothing
-  const again = await syncOnce({ cfg: r.cfg, local: r.doc, fetchFn: gh.fetch });
-  assert.equal(again.pushed, false);
-});
-
-test('connect: wrong password still → password error when the file shows up during the race', async () => {
-  const gh = makeGithub();
-  const otherSalt = randomBytes(16);
-  const otherKey = await deriveKey('un\'altra password', otherSalt, 1000);
-  const text = await seal(otherKey, otherSalt, 1000, docA);
-  let created = false;
-  gh.hook = (req) => {
-    if (req.method === 'PUT' && req.path.endsWith('/atlas.json') && !created) {
-      created = true;
-      gh.put('atlas.json', enc.encode(text));
-    }
-    return undefined;
-  };
-  await rejectsSync(
-    connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch }),
-    'password', 'Password errata',
-  );
-});
-
-test('connect: unknown repository → missing; bad token → token', async () => {
-  const gh = makeGithub();
-  await rejectsSync(
-    connect({ token: TOKEN, repo: 'non-esiste', password: PASSWORD, local: docA, fetchFn: gh.fetch }),
-    'missing', 'Repository non trovato',
-  );
   gh.hook = () => reply(401, {});
-  await rejectsSync(
-    connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docA, fetchFn: gh.fetch }),
-    'token', 'Token non valido o scaduto',
-  );
+  await rejectsSync(connect({ token: TOKEN, password: PASSWORD, local: docA, fetchFn: gh.fetch }), 'token', 'Token non valido o scaduto');
+  gh.hook = () => reply(403, {}, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(RESET) });
+  await rejectsSync(connect({ token: TOKEN, password: PASSWORD, local: docA, fetchFn: gh.fetch }), 'rate');
 });
 
-test('connect: remote atlas.json that is not an Atlas envelope → format', async () => {
+test('connect: remote file that is not an Atlas envelope → format, nothing written', async () => {
   for (const text of ['not json', JSON.stringify({ app: 'habits', v: 1 }), JSON.stringify({ hello: 'world' })]) {
     const gh = makeGithub();
-    gh.put('atlas.json', enc.encode(text));
-    await rejectsSync(
-      connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docA, fetchFn: gh.fetch }),
-      'format', 'Dati remoti non validi',
-    );
+    gh.add('a1', { [FILE]: { content: text } });
+    await rejectsSync(connect({ token: TOKEN, password: PASSWORD, local: docA, fetchFn: gh.fetch }), 'format', 'Dati remoti non validi');
     assert.equal(gh.calls.filter((c) => c.method !== 'GET').length, 0);
   }
+});
+
+test('connect: right password but damaged payload → format, not "Password errata"', async () => {
+  const { gh, cfg } = await fresh();
+  gh.setContent(cfg.gistId, await rawEnvelope(cfg, enc.encode('plain text, not gzip')));
+  await rejectsSync(connect({ token: TOKEN, password: PASSWORD, local: docB, fetchFn: gh.fetch }), 'format', 'Dati remoti non validi');
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 0);
 });
 
 test('connect/syncOnce: CompressionStream missing → format, before any network call', async () => {
   const { gh, cfg } = await fresh();
   await withoutGzip(async () => {
-    await rejectsSync(
-      connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docA, fetchFn: gh.fetch }),
-      'format', 'Browser non supportato per la sincronizzazione',
-    );
-    await rejectsSync(
-      syncOnce({ cfg, local: docA, fetchFn: gh.fetch }),
-      'format', 'Browser non supportato per la sincronizzazione',
-    );
+    await rejectsSync(connect({ token: TOKEN, password: PASSWORD, local: docA, fetchFn: gh.fetch }),
+      'format', 'Browser non supportato per la sincronizzazione');
+    await rejectsSync(syncOnce({ cfg, local: docA, fetchFn: gh.fetch }),
+      'format', 'Browser non supportato per la sincronizzazione');
   });
   assert.equal(gh.calls.length, 0);
 });
 
 // ---- syncOnce ----------------------------------------------------------
 
-test('syncOnce: nothing newer locally → no PUT', async () => {
+test('syncOnce: nothing newer locally → no write', async () => {
   const { gh, cfg } = await fresh();
   const r = await syncOnce({ cfg, local: docA, fetchFn: gh.fetch });
   assert.equal(r.pushed, false);
   assert.equal(r.count, 0);
   assert.deepEqual(r.doc, docA);
-  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 0);
 });
 
-test('syncOnce: remote newer → merged into the returned document, still no PUT', async () => {
+test('syncOnce: remote newer → merged into the returned document, still no write', async () => {
   const { gh, cfg } = await fresh();
   await remoteWrite(gh, cfg, docWith({ places: [place('l_a', 300, { name: 'Dublino nuova' }), place('l_c', 50)] }));
   const r = await syncOnce({ cfg, local: docA, fetchFn: gh.fetch });
@@ -602,21 +504,17 @@ test('syncOnce: remote newer → merged into the returned document, still no PUT
   assert.equal(r.count, 2);
   assert.equal(r.doc.places.find((p) => p.id === 'l_a').name, 'Dublino nuova');
   assert.deepEqual(ids(r.doc), ['l_a', 'l_c']);
-  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 0);
 });
 
-test('syncOnce: local newer → PUT with the current sha, fresh IV, same salt and iterations', async () => {
+test('syncOnce: local newer → PATCH with fresh IV, same salt and iterations', async () => {
   const { gh, cfg } = await fresh();
-  const sha = gh.repo.get('atlas.json').sha;
-  const ivBefore = parseEnvelope(dec.decode(gh.repo.get('atlas.json').bytes)).iv;
+  const ivBefore = parseEnvelope(gh.store.get(cfg.gistId).files[FILE].content).iv;
   const local = docWith({ places: [place('l_a', 400, { name: 'Dublino locale' }), place('l_n', 10)] });
   const r = await syncOnce({ cfg, local, fetchFn: gh.fetch });
   assert.equal(r.pushed, true);
-  const puts = gh.reqs('PUT', 'atlas.json');
-  assert.equal(puts.length, 1);
-  assert.equal(puts[0].body.sha, sha);
-  assert.notEqual(gh.repo.get('atlas.json').sha, sha);
-  const env = parseEnvelope(dec.decode(gh.repo.get('atlas.json').bytes));
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 1);
+  const env = parseEnvelope(gh.store.get(cfg.gistId).files[FILE].content);
   assert.notEqual(env.iv, ivBefore);
   assert.equal(env.kdf.salt, cfg.salt);
   assert.equal(env.kdf.iterations, cfg.iterations);
@@ -625,34 +523,27 @@ test('syncOnce: local newer → PUT with the current sha, fresh IV, same salt an
   assert.deepEqual(stored.places.map((p) => p.name), ['Dublino locale', 'l_n']);
 });
 
-test('syncOnce: atlas.json absent → seals the local document and PUTs without sha', async () => {
+test('syncOnce: gist deleted → missing', async () => {
   const { gh, cfg } = await fresh();
-  gh.repo.delete('atlas.json');
-  const r = await syncOnce({ cfg, local: docB, fetchFn: gh.fetch });
-  assert.equal(r.pushed, true);
-  const puts = gh.reqs('PUT', 'atlas.json');
-  assert.equal(puts.length, 1);
-  assert.ok(!('sha' in puts[0].body));
-  assert.deepEqual(ids(await remoteDoc(gh, cfg)), ['l_b']);
+  gh.store.clear();
+  await rejectsSync(syncOnce({ cfg, local: docA, fetchFn: gh.fetch }), 'missing');
 });
 
 test('syncOnce: remote sealed with another key → password changed', async () => {
   const { gh, cfg } = await fresh();
   const salt = randomBytes(16);
   const other = await deriveKey('nuova password', salt, 1000);
-  gh.put('atlas.json', enc.encode(await seal(other, salt, 1000, docB)));
-  await rejectsSync(
-    syncOnce({ cfg, local: docA, fetchFn: gh.fetch }),
-    'password', 'Password cambiata su un altro dispositivo: ricollega',
-  );
-  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
+  gh.setContent(cfg.gistId, await seal(other, salt, 1000, docB));
+  await rejectsSync(syncOnce({ cfg, local: docA, fetchFn: gh.fetch }),
+    'password', 'Password cambiata su un altro dispositivo: ricollega');
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 0);
 });
 
 test('syncOnce: remote that decrypts to an invalid document, or is not an envelope → format', async () => {
   const { gh, cfg } = await fresh();
   await remoteWrite(gh, cfg, { version: 2, nonsense: true });
   await rejectsSync(syncOnce({ cfg, local: docA, fetchFn: gh.fetch }), 'format', 'Dati remoti non validi');
-  gh.put('atlas.json', enc.encode('{"app":"atlas"}'));
+  gh.setContent(cfg.gistId, '{"app":"atlas"}');
   await rejectsSync(syncOnce({ cfg, local: docA, fetchFn: gh.fetch }), 'format', 'Dati remoti non validi');
 });
 
@@ -665,37 +556,26 @@ test('syncOnce: right key but damaged payload (not gzip, not JSON, bad base64) �
     ['bad base64 in data', await rawEnvelope(cfg, goodZ, { data: '***' })],
     ['bad base64 in iv', await rawEnvelope(cfg, goodZ, { iv: '***' })],
   ];
-  assert.ok(validateDoc(JSON.parse(dec.decode(await gunzip(goodZ)))), 'control: the undamaged payload is a valid document');
+  assert.ok(validateDoc(JSON.parse(new TextDecoder().decode(await gunzip(goodZ)))), 'control: the undamaged payload is valid');
   for (const [name, text] of damaged) {
-    gh.put('atlas.json', enc.encode(text));
+    gh.setContent(cfg.gistId, text);
     await assert.rejects(
       syncOnce({ cfg, local: docA, fetchFn: gh.fetch }),
       (e) => e instanceof SyncError && e.code === 'format' && e.message === 'Dati remoti non validi',
       name,
     );
   }
-  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
-  // the same file, undamaged, is read fine
-  gh.put('atlas.json', enc.encode(await rawEnvelope(cfg, goodZ)));
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 0);
+  gh.setContent(cfg.gistId, await rawEnvelope(cfg, goodZ));
   assert.deepEqual((await syncOnce({ cfg, local: docA, fetchFn: gh.fetch })).doc, docA);
 });
 
-test('connect: right password but damaged payload → format, not "Password errata"', async () => {
-  const { gh, cfg } = await fresh();
-  gh.put('atlas.json', enc.encode(await rawEnvelope(cfg, enc.encode('plain text, not gzip'))));
-  await rejectsSync(
-    connect({ token: TOKEN, repo: REPO, password: PASSWORD, local: docB, fetchFn: gh.fetch }),
-    'format', 'Dati remoti non validi',
-  );
-  assert.equal(gh.reqs('PUT', 'atlas.json').length, 0);
-});
-
-test('syncOnce: PUT 409 → reread, merge with what was merged so far, retry', async () => {
+test('syncOnce: concurrent change between read and write → re-read, merge with what was merged so far, retry', async () => {
   const { gh, cfg } = await fresh();
   let raced = false;
   gh.hook = async (req) => {
-    if (req.method === 'PUT' && req.path.endsWith('/atlas.json') && !raced) {
-      raced = true; // another device writes between our read and our PUT
+    if (req.path.endsWith('/commits') && !raced) {
+      raced = true; // another device writes between our read and our write
       await remoteWrite(gh, cfg, docWith({ places: [place('l_a', 100, { name: 'Dublino segreta' }), place('l_x', 150)] }));
     }
     return undefined;
@@ -704,42 +584,36 @@ test('syncOnce: PUT 409 → reread, merge with what was merged so far, retry', a
   const r = await syncOnce({ cfg, local, fetchFn: gh.fetch });
   assert.equal(r.pushed, true);
   assert.deepEqual(ids(r.doc), ['l_a', 'l_x', 'l_y']);
-  const puts = gh.reqs('PUT', 'atlas.json');
-  assert.equal(puts.length, 2);
-  assert.notEqual(puts[1].body.sha, puts[0].body.sha, 'the retry uses the sha it just read');
-  assert.equal(gh.reqs('GET', '/contents/atlas.json').length, 2);
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 1, 'only the retry writes');
+  assert.equal(gh.reqs('GET', `/gists/${cfg.gistId}`).filter((c) => !c.path.endsWith('/commits')).length, 2);
   assert.deepEqual(ids(await remoteDoc(gh, cfg)), ['l_a', 'l_x', 'l_y']);
 });
 
-test('syncOnce: 4 consecutive conflicts → conflict error after exactly 4 PUT attempts', async () => {
+test('syncOnce: 4 consecutive concurrent changes → conflict error, nothing written', async () => {
   const { gh, cfg } = await fresh();
   gh.hook = (req) => {
-    if (req.method === 'PUT' && req.path.endsWith('/atlas.json')) {
-      gh.put('atlas.json', gh.repo.get('atlas.json').bytes); // someone else wins every time
-    }
+    if (req.path.endsWith('/commits')) gh.setContent(cfg.gistId, gh.store.get(cfg.gistId).files[FILE].content);
     return undefined;
   };
   const local = docWith({ places: [place('l_y', 160)] });
   await rejectsSync(syncOnce({ cfg, local, fetchFn: gh.fetch }), 'conflict', 'Riprova più tardi');
-  assert.equal(gh.reqs('PUT', 'atlas.json').length, 4);
+  assert.equal(gh.reqs('PATCH', '/gists/').length, 0);
+  assert.equal(gh.reqs('GET', '/gists/').filter((c) => c.path.endsWith('/commits')).length, 4);
 });
 
-test('syncOnce: atlas.json over 1 MB (response without content) is read through the blob', async () => {
+test('syncOnce: file over 1 MB (truncated in the response) is read through raw_url', async () => {
   const { gh, cfg } = await fresh();
   const noise = new Uint8Array(1500000);
   for (let i = 0; i < noise.length; i += 65536) globalThis.crypto.getRandomValues(noise.subarray(i, i + 65536));
   const note = Buffer.from(noise).toString('base64');
-  const bigDoc = docWith({ places: [place('l_big', 500, { note })] });
-  await syncOnce({ cfg, local: bigDoc, fetchFn: gh.fetch });
-  const file = gh.repo.get('atlas.json');
-  assert.ok(file.bytes.length > 1e6, `atlas.json is ${file.bytes.length} bytes`);
+  await syncOnce({ cfg, local: docWith({ places: [place('l_big', 500, { note })] }), fetchFn: gh.fetch });
+  assert.ok(gh.store.get(cfg.gistId).files[FILE].content.length > 1e6);
 
   gh.calls.length = 0;
   const r = await syncOnce({ cfg, local: docWith(), fetchFn: gh.fetch });
-  assert.deepEqual(ids(r.doc), ['l_a', 'l_big']); // l_a was already in the repository
+  assert.deepEqual(ids(r.doc), ['l_a', 'l_big']);
   assert.equal(r.doc.places.find((p) => p.id === 'l_big').note, note);
-  assert.equal(r.count, 2);
-  assert.equal(gh.reqs('GET', `/git/blobs/${file.sha}`).length, 1);
+  assert.equal(gh.calls.filter((c) => c.url.startsWith('https://gist.githubusercontent.com/')).length, 1);
 });
 
 test('syncOnce: 401 → token, 403 → forbidden, 403 with limit → rate + resetAt, throw → network', async () => {
@@ -748,7 +622,7 @@ test('syncOnce: 401 → token, 403 → forbidden, 403 with limit → rate + rese
   gh.hook = () => reply(401, {});
   await rejectsSync(run(), 'token', 'Token non valido o scaduto');
   gh.hook = () => reply(403, {});
-  await rejectsSync(run(), 'forbidden', 'Il token non ha accesso al repository');
+  await rejectsSync(run(), 'forbidden');
   gh.hook = () => reply(403, {}, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(RESET) });
   await assert.rejects(run(), (e) => e instanceof SyncError && e.code === 'rate' && e.resetAt === RESET * 1000);
   gh.hook = null;

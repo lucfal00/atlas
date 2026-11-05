@@ -5,7 +5,7 @@ import { searchPlaces, reversePlace } from '../search.js';
 import { esc, toast, fmtNum } from '../ui.js';
 
 const VERSION = '1.0';
-const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
+const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=Atlas%20sync';
 const TOKEN_MSG = 'Token scaduto o non valido: creane uno nuovo';
 const THEMES = [['auto', 'Automatico'], ['light', 'Chiaro'], ['dark', 'Scuro']];
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -38,12 +38,11 @@ function syncHtml(s) {
       <div class="btn-row"><button type="button" class="btn primary" data-act="sync">Sincronizza ora</button>
       <button type="button" class="btn danger" data-act="unlink">Scollega</button></div>`;
   }
-  return `<p>Crea un repository privato vuoto su GitHub (di solito <b>atlas-data</b>) e un token con accesso solo a quel repository
-      e permesso <b>Contents: Read and write</b>. I dati vengono cifrati con la password prima di essere inviati.</p>
+  return `<p>Crea un token classico: nella pagina che si apre lascia spuntato solo <b>gist</b>, scegli la scadenza e premi Generate token.
+      I dati vengono cifrati con la password prima di essere salvati in un Gist segreto del tuo account.</p>
     <p><a href="${TOKEN_URL}" target="_blank" rel="noopener noreferrer">Crea un token su GitHub</a></p>
     <form class="form" data-form="sync" autocomplete="off">
       <label class="field">Token<input type="password" name="token" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label class="field">Repository<input type="text" name="repo" value="atlas-data" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="field">Password di cifratura<input type="password" name="password" autocomplete="off"></label>
       <small class="muted">Almeno 8 caratteri. Non viene salvata: se la perdi i dati remoti non sono recuperabili.</small>
       <p class="error" data-err hidden></p>
@@ -158,17 +157,15 @@ export async function render(el, ctx) {
     const err = form.querySelector('[data-err]');
     const fail = (m) => { err.textContent = m; err.hidden = !m; };
     const token = form.elements.token.value.trim();
-    const repo = form.elements.repo.value.trim();
     const password = form.elements.password.value;
     if (!token) return fail('Inserisci il token');
-    if (!/^([\w.-]+\/)?[\w.-]+$/.test(repo || 'atlas-data')) return fail('Nome del repository non valido');
     if (password.length < 8) return fail('La password deve avere almeno 8 caratteri');
     fail('');
     const btn = form.querySelector('[data-act="link"]');
     btn.disabled = true;
     btn.textContent = 'Collego…';
     try {
-      const r = await store.connectSync(token, repo, password);
+      const r = await store.connectSync(token, password);
       form.reset();
       toast(`Collegato: ${r.count} ${r.count === 1 ? 'elemento aggiornato' : 'elementi aggiornati'}`);
     } catch (e) {
@@ -209,7 +206,7 @@ export async function render(el, ctx) {
       await store.runSync();
       if (!ctx.stale()) btn.disabled = false;
     } else if (act === 'unlink') {
-      if (confirm('Scollegare questo dispositivo? I dati restano sul dispositivo e nel repository.')) await store.disconnectSync();
+      if (confirm('Scollegare questo dispositivo? I dati restano sul dispositivo e nel Gist.')) await store.disconnectSync();
     } else if (act === 'export') {
       try {
         if (await store.exportBackup()) toast('Backup esportato');

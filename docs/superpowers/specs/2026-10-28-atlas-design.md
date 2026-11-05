@@ -15,7 +15,7 @@ e vederli su un atlante disegnato con statistiche. Stessa base tecnica e stessa 
 - iPhone (Safari, "Aggiungi a Home") + PC (Chrome/Edge, "Installa app"). Offline dopo la prima apertura (tranne la ricerca per nome).
 - Nessuna libreria esterna, nessun build step: HTML/CSS/JS (ES modules). Moduli comuni copiati da Habits e adattati.
 - GitHub Pages: repository pubblico `lucfal00/atlas` → `https://lucfal00.github.io/atlas/`.
-- Dati sincronizzati cifrati in un repository GitHub **privato** dell'utente (`atlas-data`).
+- Dati sincronizzati cifrati in un Gist GitHub **segreto** dell'utente (file `atlas-sync.json`), come in Habits.
 - Lingua UI: italiano. Importi in euro. Settimana lunedì–domenica.
 
 ## 3. Fuori ambito (v1)
@@ -80,7 +80,7 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#stats`, `#impostazioni`, `#luogo/
 ### 4.5 Impostazioni
 
 - Tema: automatico / chiaro / scuro. Casa: luogo base (default Napoli 40,85 N 14,27 E), modificabile con ricerca o posizione attuale.
-- Sincronizzazione (§9): repository, token, password; **Collega** / **Sincronizza ora** / **Scollega**; stato.
+- Sincronizzazione (§9): token, password; **Collega** / **Sincronizza ora** / **Scollega**; stato.
 - Spazio: dati sul dispositivo (`navigator.storage.estimate()`).
 - Esporta / Importa backup (solo dati, §9.3). Data ultimo backup, versione app.
 - Crediti: Natural Earth (confini), OpenStreetMap / Nominatim (ricerca luoghi).
@@ -195,18 +195,20 @@ Punto fuori da ogni area (mare, costa semplificata) → area più vicina entro 2
 ## 9. Sincronizzazione, backup e merge
 
 ### 9.1 Configurazione
-- L'utente crea il repository privato `atlas-data` (vuoto) e un token fine-grained con accesso solo a quel repository, permesso **Contents: Read and write**.
-- **Collega**: token, nome repository (default `atlas-data`), password ≥ 8 caratteri. Proprietario da `GET /user`.
-- Configurazione in `meta.sync`: `{ token, owner, repo, salt, iterations, key }` (chiave AES derivata in base64; la password non viene salvata).
+- L'utente crea un token classico con il solo scope **gist** (`https://github.com/settings/tokens/new?scopes=gist&description=Atlas%20sync`). Nessun repository da creare.
+- **Collega**: token, password ≥ 8 caratteri.
+- Configurazione in `meta.sync`: `{ token, gistId, salt, iterations, key }` (chiave AES derivata in base64; la password non viene salvata).
 
 ### 9.2 Documento
-- File `atlas.json` = busta come Habits: `{ "app": "atlas", "v": 1, "kdf": { "name": "PBKDF2-SHA256", "iterations": 310000, "salt": "…" }, "iv": "…", "z": "gzip", "data": "…" }`;
+- File `atlas-sync.json` di un Gist segreto (`public: false`, descrizione "Atlas – dati sincronizzati (cifrati)") = busta come Habits: `{ "app": "atlas", "v": 1, "kdf": { "name": "PBKDF2-SHA256", "iterations": 310000, "salt": "…" }, "iv": "…", "z": "gzip", "data": "…" }`;
   `data` = AES-GCM 256 del JSON compresso con `CompressionStream('gzip')`.
-- Lettura: `GET /repos/{owner}/{repo}/contents/atlas.json` → `sha` + contenuto base64; se il contenuto non è incluso (file > 1 MB) → `GET /repos/{owner}/{repo}/git/blobs/{sha}`.
-- **Collega**: file assente (404) → nuovo salt, scrittura del documento locale; presente → decifra (errore = "Password errata"), merge, scrittura se serve.
+- Ricerca: `GET /gists?per_page=100` (pagine successive se serve) e si prende il primo Gist che contiene il file `atlas-sync.json`; i Gist di Habits (`habits-sync.json`), Fitness (`fitness-sync.json`) e ogni altro Gist non vengono mai letti né modificati.
+- Lettura: `GET /gists/{id}` → contenuto del file; se è troncato (file > 1 MB) si legge `raw_url` senza inviare il token.
+- **Collega**: Gist assente → nuovo salt, `POST /gists` con il documento locale; presente → decifra (errore = "Password errata"), merge, scrittura se serve.
 - **Sync** (come Habits: avvio, ritorno online, ritorno in primo piano, 3 s dopo ogni modifica, passaggio in background con sync in attesa, **Sincronizza ora**):
-  leggi → decifra → merge → `PUT` (con `sha`) solo se i dati locali hanno qualcosa di più recente del remoto.
-  Risposta 409 → rilettura, merge, nuovo tentativo (massimo 3). Modifiche durante la sync preservate (merge finale con lo stato corrente).
+  leggi → decifra → merge → `PATCH /gists/{id}` solo se i dati locali hanno qualcosa di più recente del remoto.
+  I Gist non hanno `sha`: prima di scrivere si confronta la revisione del Gist (`GET /gists/{id}/commits?per_page=1`) con quella appena letta;
+  se un altro dispositivo ha scritto nel frattempo → rilettura, merge, nuovo tentativo (massimo 3). Modifiche durante la sync preservate (merge finale con lo stato corrente).
 
 ### 9.3 Backup
 File `atlas-backup-AAAA-MM-GG.json` (solo documento); iPhone `navigator.share({files})`, PC download.
@@ -267,11 +269,11 @@ Il service worker di Atlas cancella solo le cache `atlas-*` diverse da quella co
 | Documento corrotto | copia in `meta["v1.corrupt"]`, avvio vuoto, avviso |
 | Import invalido | messaggio, nessuna modifica |
 | Sync 401 | "Token non valido o scaduto" + banner |
-| Sync 403 (permessi) | "Il token non ha accesso al repository" + banner |
+| Sync 403 (permessi) | "Accesso ai gist negato: il token deve avere lo scope gist" + banner |
 | Sync 403 (limite richieste) | pausa fino allo sblocco, poi ripresa |
-| Sync 404 repository | "Repository non trovato" + banner |
+| Sync 404 Gist | "Gist di sincronizzazione non trovato: scollega e ricollega" + banner |
 | Decifratura fallita | "Password errata" (collega) / "Password cambiata su un altro dispositivo: ricollega" (sync) + banner |
-| Sync 409 | nuovo tentativo automatico (max 3), poi "Riprova più tardi" |
+| Modifica concorrente sul Gist | nuovo tentativo automatico (max 3), poi "Riprova più tardi" |
 | Rete assente | sync in attesa, nessun banner |
 | gzip non supportato | "Browser non supportato per la sincronizzazione" |
 | Ricerca senza rete | "Serve internet per cercare: tocca la mappa o usa la posizione" |
@@ -302,5 +304,5 @@ Il service worker di Atlas cancella solo le cache `atlas-*` diverse da quella co
 ## 15. Pubblicazione
 
 Prima la correzione di §11 in Habits. Poi repository pubblico `lucfal00/atlas`, GitHub Pages dalla branch `main`, root.
-L'utente crea il repository privato `atlas-data` e il token (istruzioni nel README, in italiano sul modello di Habits).
+L'utente crea il token con il solo scope `gist` (istruzioni nel README, in italiano sul modello di Habits).
 Installazione: iPhone Safari → Condividi → Aggiungi a Home; PC Chrome/Edge → Installa app.
