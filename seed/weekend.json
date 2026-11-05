@@ -1,0 +1,443 @@
+{
+  "version": 1,
+  "places": [
+    {
+      "id": "l_dub000",
+      "name": "Dublino",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 53.35,
+      "lon": -6.26,
+      "country": "IE",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Ha'penny Bridge sul Liffey · The Spire\n\nDa sapere:\n- Airlink 747 aeroporto ↔ centro: 8 € online a tratta, circa 30 min\n- Pinta 6–8 €, di più a Temple Bar\n- Il mercatino al Castello nel 2026 non si tiene\n- Partenza stretta: a Capodichino entro le 18:15, solo bagaglio a mano",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_dub001",
+          "text": "Pinta a Temple Bar la sera dell’arrivo",
+          "done": false
+        },
+        {
+          "id": "a_dub002",
+          "text": "Trinity College e Book of Kells",
+          "done": false
+        },
+        {
+          "id": "a_dub003",
+          "text": "Grafton Street con le luminarie, St Stephen’s Green",
+          "done": false
+        },
+        {
+          "id": "a_dub004",
+          "text": "Mercatino TwinkleTown a Smithfield",
+          "done": false
+        },
+        {
+          "id": "a_dub005",
+          "text": "Guinness Storehouse o passeggiata sul Liffey",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        12
+      ],
+      "budget": 374.5,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_ath000",
+      "name": "Atene",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 37.98,
+      "lon": 23.73,
+      "country": "GR",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Partenone sull’Acropoli\n\nDa sapere:\n- 1° gennaio Acropoli e musei chiusi\n- Biglietto turistico 3 giorni: 20 € con andata e ritorno aeroporto\n- Acropoli 30 €, d’inverno 8–17\n- Borseggiatori sulla metro dell’aeroporto",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_ath001",
+          "text": "Plaka, Anafiotika e Monastiraki",
+          "done": false
+        },
+        {
+          "id": "a_ath002",
+          "text": "Tramonto sulla collina di Filopappou",
+          "done": false
+        },
+        {
+          "id": "a_ath003",
+          "text": "Acropoli al mattino presto, poi Museo dell’Acropoli",
+          "done": false
+        },
+        {
+          "id": "a_ath004",
+          "text": "Museo Archeologico Nazionale (gratis domenica 3 gennaio)",
+          "done": false
+        },
+        {
+          "id": "a_ath005",
+          "text": "Licabetto o Psyrri la sera",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        1
+      ],
+      "budget": 404.5,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_ory000",
+      "name": "Parigi",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 48.86,
+      "lon": 2.35,
+      "country": "FR",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Tour Eiffel sulla Senna\n\nDa sapere:\n- Metro 14 da Orly: biglietto aeroporti 14 € a tratta\n- Taxi Orly ↔ centro a tariffa fissa, circa 36–45 €\n- Fine febbraio gli hotel salgono: prenotare presto",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_ory001",
+          "text": "Le Marais a piedi, place des Vosges",
+          "done": false
+        },
+        {
+          "id": "a_ory002",
+          "text": "Montmartre al tramonto",
+          "done": false
+        },
+        {
+          "id": "a_ory003",
+          "text": "Lungosenna e Île de la Cité",
+          "done": false
+        },
+        {
+          "id": "a_ory004",
+          "text": "Pranzo a menu fisso in un bistrot (15–26 €)",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        1
+      ],
+      "budget": 363.5,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_ber000",
+      "name": "Berlino",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 52.52,
+      "lon": 13.4,
+      "country": "DE",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Porta di Brandeburgo · Fernsehturm\n\nDa sapere:\n- Dall’aeroporto serve il biglietto ABC: 5 € a tratta\n- In città basta AB: 4 € la corsa\n- Rientro la domenica alle 14:05",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_ber001",
+          "text": "Porta di Brandeburgo e Unter den Linden",
+          "done": false
+        },
+        {
+          "id": "a_ber002",
+          "text": "Cupola del Reichstag (gratis, prenotare)",
+          "done": false
+        },
+        {
+          "id": "a_ber003",
+          "text": "East Side Gallery",
+          "done": false
+        },
+        {
+          "id": "a_ber004",
+          "text": "Isola dei Musei",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        2
+      ],
+      "budget": 260.5,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_waw000",
+      "name": "Varsavia",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 52.23,
+      "lon": 21.01,
+      "country": "PL",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Palazzo della Cultura e della Scienza\n\nDa sapere:\n- Treno SKM dall’aeroporto: 4,40 zł, circa 20 min\n- Si paga in złoty, carta quasi ovunque\n- A febbraio spesso sotto zero",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_waw001",
+          "text": "Città Vecchia e Castello Reale",
+          "done": false
+        },
+        {
+          "id": "a_waw002",
+          "text": "Parco Łazienki",
+          "done": false
+        },
+        {
+          "id": "a_waw003",
+          "text": "Pranzo in un bar mleczny (3–5 €)",
+          "done": false
+        },
+        {
+          "id": "a_waw004",
+          "text": "Vista dal Palazzo della Cultura",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        2
+      ],
+      "budget": 218,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_krk000",
+      "name": "Cracovia",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 50.06,
+      "lon": 19.94,
+      "country": "PL",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Basilica di Santa Maria · Sukiennice\n\nDa sapere:\n- Treno aeroporto ↔ centro: 20 zł, circa 18 min\n- Partenza venerdì alle 15:25: serve uscire prima dal lavoro\n- Auschwitz-Birkenau: mezza giornata, 40–90 €",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_krk001",
+          "text": "Rynek Główny e il Sukiennice",
+          "done": false
+        },
+        {
+          "id": "a_krk002",
+          "text": "Collina e castello del Wawel",
+          "done": false
+        },
+        {
+          "id": "a_krk003",
+          "text": "Kazimierz, il quartiere ebraico, la sera",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        2
+      ],
+      "budget": 234,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_tia000",
+      "name": "Tirana",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 41.33,
+      "lon": 19.82,
+      "country": "AL",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Piramide di Tirana · facciate colorate\n\nDa sapere:\n- Bus aeroporto ogni ora: circa 4 €\n- Si paga in lek; pasto locale 6–8 €\n- Domenica 28 marzo cambia l’ora",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_tia001",
+          "text": "Piazza Skanderbeg e la Moschea Et’hem Bey",
+          "done": false
+        },
+        {
+          "id": "a_tia002",
+          "text": "Bunk’Art, il bunker trasformato in museo",
+          "done": false
+        },
+        {
+          "id": "a_tia003",
+          "text": "Il quartiere Blloku la sera",
+          "done": false
+        },
+        {
+          "id": "a_tia004",
+          "text": "Funivia del Dajti",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        3
+      ],
+      "budget": 182,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "l_tls000",
+      "name": "Tolosa",
+      "cat": "citta",
+      "status": "wish",
+      "lat": 43.6,
+      "lon": 1.44,
+      "country": "FR",
+      "region": null,
+      "province": null,
+      "rating": null,
+      "fav": false,
+      "tags": [],
+      "note": "Ariane 5 alla Cité de l’espace · la Ville Rose\n\nDa sapere:\n- Tram T2 aeroporto ↔ centro: circa 1,80 €\n- A Capodichino prima delle 7:30 del 1° gennaio\n- Menu del pranzo 12–18 €, cena in bistrot circa 35 €",
+      "with": [],
+      "todo": [
+        {
+          "id": "a_tls001",
+          "text": "Place du Capitole e la basilica di Saint-Sernin",
+          "done": false
+        },
+        {
+          "id": "a_tls002",
+          "text": "Canal du Midi",
+          "done": false
+        },
+        {
+          "id": "a_tls003",
+          "text": "Cité de l’espace e museo Aeroscopia",
+          "done": false
+        },
+        {
+          "id": "a_tls004",
+          "text": "Cassoulet a pranzo",
+          "done": false
+        }
+      ],
+      "links": [],
+      "months": [
+        1
+      ],
+      "budget": 399.5,
+      "visits": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    }
+  ],
+  "trips": [
+    {
+      "id": "v_dub000",
+      "title": "Dublino",
+      "from": "2026-12-11",
+      "to": "2026-12-13",
+      "with": [],
+      "note": "Ryanair: andata Ven 19:40 → 22:00, ritorno Dom 16:05 → 20:15.",
+      "links": [],
+      "stops": [
+        {
+          "place": "l_dub000",
+          "from": "2026-12-11",
+          "to": "2026-12-13"
+        }
+      ],
+      "budget": {
+        "trasporti": 132,
+        "alloggio": 170,
+        "cibo": 72.5,
+        "attivita": 0,
+        "altro": 0
+      },
+      "costs": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    },
+    {
+      "id": "v_ath000",
+      "title": "Atene",
+      "from": "2027-01-01",
+      "to": "2027-01-04",
+      "with": [],
+      "note": "easyJet: andata Ven 1 gen 10:10 → 12:50, ritorno Lun 4 gen 15:45 → 16:35.",
+      "links": [],
+      "stops": [
+        {
+          "place": "l_ath000",
+          "from": "2027-01-01",
+          "to": "2027-01-04"
+        }
+      ],
+      "budget": {
+        "trasporti": 167,
+        "alloggio": 125,
+        "cibo": 112.5,
+        "attivita": 0,
+        "altro": 0
+      },
+      "costs": [],
+      "deleted": false,
+      "updatedAt": 1793145600000
+    }
+  ],
+  "diary": {},
+  "marks": {},
+  "settings": {
+    "theme": "auto",
+    "home": {
+      "name": "Napoli",
+      "lat": 40.85,
+      "lon": 14.27
+    },
+    "lastBackup": 0
+  }
+}
