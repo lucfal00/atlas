@@ -5,63 +5,70 @@ const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v) => typeof v === 'string';
 const isDay = (v) => isStr(v) && /^\d{4}-\d{2}-\d{2}$/.test(v);
-const optArr = (v) => v === undefined || Array.isArray(v);
 const optNum = (v) => v === undefined || v === null || isNum(v);
 
 /** Timestamp of a record: `field` as a finite number, otherwise 0. */
 const stamp = (o, field) => (Number.isFinite(o?.[field]) ? o[field] : 0);
 
+// Unknown fields (old documents: rating, tags, costs, diary…) are ignored here and dropped by sanitizeDoc.
+
 /** A place that screens can render without throwing. */
-function validPlace(p) {
-  return isObj(p) && isStr(p.id) && isStr(p.name)
-    && optNum(p.lat) && optNum(p.lon) && optNum(p.budget)
-    && (p.rating == null || (Number.isInteger(p.rating) && p.rating >= 1 && p.rating <= 5))
-    && ['tags', 'with', 'todo', 'links', 'months', 'visits'].every((k) => optArr(p[k]))
-    && (p.todo || []).every(isObj)
-    && (p.visits || []).every(isDay);
-}
+const validPlace = (p) => isObj(p) && isStr(p.id) && isStr(p.name) && optNum(p.lat) && optNum(p.lon);
 
-/** A trip with valid dates and well-formed stops / costs. */
+/** A trip with valid dates and well-formed stops. */
 function validTrip(t) {
-  return isObj(t) && isStr(t.id) && isStr(t.title)
-    && isDay(t.from) && isDay(t.to) && t.from <= t.to
-    && ['with', 'links'].every((k) => optArr(t[k]))
-    && optArr(t.stops) && (t.stops || []).every((s) => isObj(s) && isStr(s.place)
-      && (s.from === undefined || isDay(s.from)) && (s.to === undefined || isDay(s.to)))
-    && optArr(t.costs) && (t.costs || []).every((c) => isObj(c) && isNum(c.amount))
-    && (t.budget === undefined || isObj(t.budget));
+  return isObj(t) && isStr(t.id) && isStr(t.title) && isDay(t.from) && isDay(t.to) && t.from <= t.to
+    && (t.stops === undefined || (Array.isArray(t.stops) && t.stops.every((s) => isObj(s) && isStr(s.place))))
+    && optNum(t.spend);
 }
 
-const validDiary = (e) => isObj(e) && (e.text === undefined || isStr(e.text)) && optArr(e.places);
 const validMark = (e) => isObj(e) && (e.s === null || e.s === undefined || isStr(e.s));
-
-const allValid = (o, fn) => Object.values(o).every(fn);
 
 export function validateDoc(d) {
   return isObj(d) && d.version === 1
     && Array.isArray(d.places) && d.places.every(validPlace)
     && Array.isArray(d.trips) && d.trips.every(validTrip)
-    && isObj(d.diary) && allValid(d.diary, validDiary)
-    && isObj(d.marks) && allValid(d.marks, validMark)
+    && isObj(d.marks) && Object.values(d.marks).every(validMark)
     && isObj(d.settings);
 }
 
+const PLACE_KEYS = ['id', 'name', 'cat', 'status', 'date', 'note', 'lat', 'lon', 'country', 'region', 'deleted', 'updatedAt'];
+const TRIP_KEYS = ['id', 'title', 'from', 'to', 'stops', 'note', 'spend', 'deleted', 'updatedAt'];
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+
+/** Known fields only; the old model maps over: planned → wish, last visit → date, costs → spend. */
+function cleanPlace(p) {
+  const c = pick(p, PLACE_KEYS);
+  if (c.status !== 'visited') c.status = 'wish';
+  if (!isDay(c.date)) c.date = (Array.isArray(p.visits) ? p.visits.filter(isDay).sort().pop() : undefined) ?? null;
+  return c;
+}
+
+function cleanTrip(t) {
+  const c = pick(t, TRIP_KEYS);
+  c.stops = (t.stops || []).map((s) => ({ place: s.place }));
+  if (!isNum(c.spend)) {
+    const sum = Array.isArray(t.costs) ? t.costs.reduce((a, x) => a + (isNum(x?.amount) ? x.amount : 0), 0) : 0;
+    c.spend = sum > 0 ? Math.round(sum * 100) / 100 : null;
+  }
+  return c;
+}
+
 /**
- * Lenient import: drop single malformed places / trips / diary pages / marks instead of rejecting the whole document.
- * → { doc, dropped } (a clean copy), or null if the document has the wrong overall shape.
+ * Lenient import: drop single malformed places / trips / marks instead of rejecting the whole document, and
+ * drop fields of the old model. → { doc, dropped } (a clean copy), or null if the overall shape is wrong.
  */
 export function sanitizeDoc(d) {
   if (!isObj(d) || d.version !== 1 || !Array.isArray(d.places) || !Array.isArray(d.trips)
-    || !isObj(d.diary) || !isObj(d.marks) || !isObj(d.settings)) return null;
+    || !isObj(d.marks) || !isObj(d.settings)) return null;
   let dropped = 0;
-  const keep = (list, ok) => list.filter((x) => (ok(x) ? true : (dropped++, false)));
-  const keepMap = (m, ok) => Object.fromEntries(Object.entries(m).filter(([, v]) => (ok(v) ? true : (dropped++, false))));
+  const keep = (list, ok, clean) => list.filter((x) => (ok(x) ? true : (dropped++, false))).map(clean);
   const doc = {
-    ...d,
-    places: keep(d.places, validPlace),
-    trips: keep(d.trips, validTrip),
-    diary: keepMap(d.diary, validDiary),
-    marks: keepMap(d.marks, validMark),
+    version: 1,
+    places: keep(d.places, validPlace, cleanPlace),
+    trips: keep(d.trips, validTrip, cleanTrip),
+    marks: Object.fromEntries(Object.entries(d.marks).filter(([, v]) => (validMark(v) ? true : (dropped++, false)))),
+    settings: d.settings,
   };
   return { doc, dropped };
 }
@@ -109,11 +116,9 @@ export function mergeDocs(local, incoming) {
     doc[key] = r.list;
     count += r.count;
   }
-  for (const key of ['diary', 'marks']) {
-    const r = mergeByKey(doc[key], inc[key]);
-    doc[key] = r.map;
-    count += r.count;
-  }
+  const r = mergeByKey(doc.marks, inc.marks);
+  doc.marks = r.map;
+  count += r.count;
   doc.settings.lastBackup = Math.max(stamp(doc.settings, 'lastBackup'), stamp(inc.settings, 'lastBackup'));
   return { doc, count };
 }

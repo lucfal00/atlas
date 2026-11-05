@@ -9,7 +9,6 @@
 // touching `el` once it returns true (the route changed or the view was re-rendered in the meantime).
 import * as store from './store.js';
 import { todayKey } from './logic.js';
-import { initTooltips, hideTip } from './charts.js';
 import * as map from './views/map.js';
 import * as places from './views/places.js';
 import * as place from './views/place.js';
@@ -17,18 +16,13 @@ import * as placeEdit from './views/place-edit.js';
 import * as trips from './views/trips.js';
 import * as trip from './views/trip.js';
 import * as tripEdit from './views/trip-edit.js';
-import * as diary from './views/diary.js';
-import * as stats from './views/stats.js';
-import * as year from './views/year.js';
 import * as settings from './views/settings.js';
 
 const main = document.getElementById('view');
 const banner = document.getElementById('banner');
 const TAB_OF = {                                    // route name -> tab (data-view)
-  mappa: 'mappa', luoghi: 'luoghi', luogo: 'luoghi', viaggi: 'viaggi', viaggio: 'viaggi', diario: 'viaggi',
-  stats: 'stats', anno: 'stats', impostazioni: 'impostazioni',
+  mappa: 'mappa', luoghi: 'luoghi', luogo: 'luoghi', viaggi: 'viaggi', viaggio: 'viaggi', impostazioni: 'impostazioni',
 };
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 let cur = null;                                     // route being shown
 let active = null;                                  // object returned by its view
 let ticket = 0;                                     // invalidates a pending async render
@@ -51,9 +45,6 @@ function pick(name, p) {
     case 'luogo': return p[0] ? [name, edit ? placeEdit : place] : ['luoghi', places];
     case 'viaggi': return [name, trips];
     case 'viaggio': return p[0] ? [name, edit ? tripEdit : trip] : ['viaggi', trips];
-    case 'diario': return p[0] && DAY.test(p[1] || '') ? [name, diary] : ['viaggi', trips];
-    case 'stats': return [name, stats];
-    case 'anno': return /^\d{4}$/.test(p[0] || '') ? [name, year] : ['stats', stats];
     case 'impostazioni': return [name, settings];
     default: return ['mappa', map];
   }
@@ -128,7 +119,6 @@ function render() {
     else a.removeAttribute('aria-current');
   });
 
-  hideTip();
   destroyActive();
   main.onclick = main.onchange = main.oninput = main.onsubmit = null;   // views re-attach their own
   main.replaceChildren();
@@ -189,7 +179,6 @@ try {
 } catch (e) {
   console.error(e);
 }
-initTooltips();
 store.onChange(() => {
   applyChrome();
   refreshActive();

@@ -1,7 +1,7 @@
 // Document store: the only module that changes the document. Persists to IndexedDB (db.js), syncs through sync.js.
 // Emits 'change' after data mutations and 'sync' when sync status or the banner changes.
 // Rule: no object taken from `doc` is kept across an await (a sync may replace `doc` meanwhile).
-import { emptyDoc, newId, todayKey, COST_CATS } from './logic.js';
+import { emptyDoc, newId, todayKey } from './logic.js';
 import { validateDoc, sanitizeDoc, mergeDocs } from './merge.js';
 import { locate } from './geo.js';
 import { connect, syncOnce } from './sync.js';
@@ -147,29 +147,23 @@ export function getGeo() {
   return geoLoad;
 }
 
-/** { country, region, province } of a point (spec §8.3); rejects if the geographic data cannot be loaded. */
+/** { country, region } of a point (spec §8.3); rejects if the geographic data cannot be loaded. */
 export async function locateCoords(lat, lon) {
   const { world, italia } = await getGeo();
-  return locate(lat, lon, world, italia);
+  const { country, region } = locate(lat, lon, world, italia);
+  return { country, region };
 }
 
 // ---- Places and trips ----------------------------------------------------
 
-const PLACE_DEFAULTS = () => ({
-  country: null, region: null, province: null,
-  cat: 'altro', status: 'wish', rating: null, fav: false, tags: [], note: '', with: [], todo: [], links: [],
-  months: [], budget: null, visits: [], deleted: false,
-});
+const PLACE_DEFAULTS = () => ({ country: null, region: null, cat: 'altro', status: 'wish', date: null, note: '', deleted: false });
 
-const TRIP_DEFAULTS = () => ({
-  with: [], note: '', links: [], stops: [], costs: [], deleted: false,
-  budget: Object.fromEntries(COST_CATS.map((k) => [k, 0])),
-});
+const TRIP_DEFAULTS = () => ({ note: '', stops: [], spend: null, deleted: false });
 
 /**
- * Create (no id) or update a place → its id. Country / region / province:
- * - `country` provided (even null): exactly the provided country / region / province (missing → null);
- * - else coordinates explicitly set to null: cleared (a provided region / province is kept);
+ * Create (no id) or update a place → its id. Country / region:
+ * - `country` provided (even null): exactly the provided country / region (missing → null);
+ * - else coordinates explicitly set to null: cleared (a provided region is kept);
  * - else computed from the coordinates when the place is new or its coordinates changed.
  */
 export async function savePlace(p) {
@@ -178,16 +172,15 @@ export async function savePlace(p) {
   const lon = p.lon === undefined ? before?.lon : p.lon;
   let geo = null;
   if (p.country !== undefined) {
-    geo = { country: p.country, region: p.region ?? null, province: p.province ?? null };
+    geo = { country: p.country, region: p.region ?? null };
   } else if (p.lat === null || p.lon === null) {
-    geo = { country: null, region: p.region ?? null, province: p.province ?? null };
+    geo = { country: null, region: p.region ?? null };
   } else if (isNum(lat) && isNum(lon) && (!before || lat !== before.lat || lon !== before.lon)) {
-    geo = await locateCoords(lat, lon).catch(() => ({ country: null, region: null, province: null }));
+    geo = await locateCoords(lat, lon).catch(() => ({ country: null, region: null }));
   }
   const old = p.id ? doc.places.find((x) => x.id === p.id) : undefined;   // doc may have changed meanwhile
   const id = p.id ?? newId('l');
   const next = { ...PLACE_DEFAULTS(), ...old, ...defined(p), ...geo, id, updatedAt: Date.now() };
-  next.todo = next.todo.map((t) => (t.id ? t : { ...t, id: newId('a') }));
   upsert(doc.places, next);
   await save();
   return id;
@@ -211,8 +204,6 @@ export async function saveTrip(t) {
   const id = t.id ?? newId('v');
   const old = t.id ? doc.trips.find((x) => x.id === t.id) : undefined;
   const next = { ...TRIP_DEFAULTS(), ...old, ...defined(t), id, updatedAt: Date.now() };
-  next.budget = { ...TRIP_DEFAULTS().budget, ...next.budget };
-  next.costs = next.costs.map((c) => (c.id ? c : { ...c, id: newId('c') }));
   upsert(doc.trips, next);
   await save();
   return id;
@@ -222,26 +213,10 @@ export function deleteTrip(id) {
   return softDelete('trips', id);
 }
 
-/** Diary page of one trip day; fields not in `patch` are kept. */
-export function setDiary(tripId, day, patch) {
-  const key = `${tripId}:${day}`;
-  doc.diary[key] = { text: '', places: [], ...doc.diary[key], ...patch, t: Date.now() };
-  return save();
-}
-
-/** Manual area mark (`c:IT`, `r:Campania`, `p:Salerno`): s = 'visited', or null to remove it (the key stays for merge). */
+/** Manual area mark (`c:IT`, `r:Campania`): s = 'visited', or null to remove it (the key stays for merge). */
 export function setMark(key, s) {
   doc.marks[key] = { s, t: Date.now() };
   return save();
-}
-
-/** { localBytes: origin usage or null }. */
-export async function storageInfo() {
-  let localBytes = null;
-  try {
-    localBytes = (await navigator.storage.estimate()).usage ?? null;
-  } catch { /* unsupported */ }
-  return { localBytes };
 }
 
 // ---- Settings and backup -------------------------------------------------

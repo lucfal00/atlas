@@ -1,4 +1,4 @@
-// Settings (spec §4.5, §9): theme, home, sync (link / sync now / unlink / status), storage, backup, credits, version.
+// Settings (spec §4.5, §9): theme, home (start of the trip route), sync (link / sync now / unlink / status), backup, credits, version.
 // The sync form is only redrawn when the link appears or disappears, so a half-typed token survives status updates.
 import * as store from '../store.js';
 import { searchPlaces, reversePlace } from '../search.js';
@@ -82,10 +82,8 @@ export async function render(el, ctx) {
       </form>
       <div data-found></div></section>
     <section class="card"><div class="card-head"><h2>Sincronizzazione</h2></div><div data-sync>${syncHtml(store.getSync())}</div></section>
-    <section class="card"><div class="card-head"><h2>Spazio</h2></div>
-      <p data-space class="muted">Calcolo…</p></section>
     <section class="card"><div class="card-head"><h2>Backup</h2></div>
-      <p>Solo i dati (luoghi, viaggi, diario, segni). Ultimo backup: <span data-last>${esc(lastBackup(cur.doc))}</span>.</p>
+      <p>Solo i dati (luoghi, viaggi, segni). Ultimo backup: <span data-last>${esc(lastBackup(cur.doc))}</span>.</p>
       <div class="btn-row"><button type="button" class="btn" data-act="export">Esporta backup</button>
       <button type="button" class="btn" data-act="import">Importa backup</button></div>
       <input type="file" accept="application/json,.json" data-file hidden>
@@ -93,14 +91,6 @@ export async function render(el, ctx) {
     <section class="card"><div class="card-head"><h2>Crediti</h2></div>
       <p>Confini: Natural Earth (pubblico dominio).<br>Ricerca luoghi: OpenStreetMap / Nominatim.</p>
       <p class="muted">Atlas versione ${VERSION}</p></section></div>`;
-
-  async function fillSpace() {
-    const { localBytes } = await store.storageInfo();
-    if (ctx.stale()) return;
-    $('[data-space]').textContent = localBytes == null ? 'Spazio non disponibile su questo browser.'
-      : `${(localBytes / 1048576).toLocaleString('it-IT', { maximumFractionDigits: 1 })} MB di dati sul dispositivo (inclusi gli altri archivi dello stesso sito)`;
-  }
-  fillSpace().catch((e) => console.error(e));
 
   function drawFound() {
     $('[data-found]').innerHTML = foundHtml();
@@ -250,7 +240,6 @@ export async function render(el, ctx) {
     const t = THEMES.some(([v]) => v === c.doc.settings.theme) ? c.doc.settings.theme : 'auto';
     const r = $(`input[name="theme"][value="${t}"]`);
     if (r && !r.checked) r.checked = true;
-    fillSpace().catch((e) => console.error(e));
   }
   return { update };
 }

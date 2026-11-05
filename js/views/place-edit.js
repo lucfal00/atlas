@@ -1,18 +1,17 @@
 // New / edit place (spec §4.2, §5). Position three ways: Cerca (Nominatim, only on tap), tap on the mini map,
-// Posizione attuale. Country / region / province are computed from the position and stay editable.
-// Query prefill for #luogo/nuovo: lat, lon, country, region, province, name, trip (after saving, a stop {place}
-// is appended to that trip and the app goes to #viaggio/<trip>). Sections that change on their own (position,
-// list editors) are redrawn alone, so typed text elsewhere is never lost; store changes do not touch the form.
+// Posizione attuale. Country / region are computed from the position and stay editable.
+// Query prefill for #luogo/nuovo: lat, lon, country, region, name, trip (after saving, a stop {place}
+// is appended to that trip and the app goes to #viaggio/<trip>). The position section is redrawn alone, so typed
+// text elsewhere is never lost; store changes do not touch the form.
 import * as store from '../store.js';
 import { createMap } from '../map.js';
-import { newId } from '../logic.js';
 import { searchPlaces } from '../search.js';
-import { esc, CATEGORIES, safeUrl, parseNum, toast, MONTHS } from '../ui.js';
+import { esc, CATEGORIES } from '../ui.js';
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const live = (list) => (list || []).filter((x) => !x.deleted);
-const list = (s) => [...new Set(String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean))];
 const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function render(el, ctx) {
   const isNew = ctx.params[0] === 'nuovo' || !ctx.params[0];
@@ -41,53 +40,28 @@ export async function render(el, ctx) {
 
   const countries = geo.world.features.map((f) => [f.k, f.n]).sort((a, b) => a[1].localeCompare(b[1], 'it'));
   const regions = [...new Set(geo.italia.features.map((f) => f.r))].sort((a, b) => a.localeCompare(b, 'it'));
-  const provinces = geo.italia.features.map((f) => ({ n: f.n, r: f.r })).sort((a, b) => a.n.localeCompare(b.n, 'it'));
 
-  // Form state for the parts that are not plain inputs; plain inputs are read from the DOM on save.
+  // Form state for the position; plain inputs are read from the DOM on save.
   const f = old ? {
-    cat: old.cat, status: old.status === 'visited' ? 'visited' : 'wish', rating: old.rating ?? null, fav: !!old.fav,
-    lat: num(old.lat) ? old.lat : null, lon: num(old.lon) ? old.lon : null,
-    country: old.country ?? null, region: old.region ?? null, province: old.province ?? null,
-    todo: (old.todo || []).map((t) => ({ ...t })), links: (old.links || []).map((l) => ({ ...l })),
-    months: [...(old.months || [])], visits: [...(old.visits || [])],
+    lat: num(old.lat) ? old.lat : null, lon: num(old.lon) ? old.lon : null, country: old.country ?? null, region: old.region ?? null,
   } : {
-    cat: 'altro', status: 'wish', rating: null, fav: false,
-    lat: qNum('lat'), lon: qNum('lon'),
-    country: q.get('country') || null, region: q.get('region') || null, province: q.get('province') || null,
-    todo: [], links: [], months: [], visits: [],
+    lat: qNum('lat'), lon: qNum('lon'), country: q.get('country') || null, region: q.get('region') || null,
   };
-  if (!CATEGORIES.some((c) => c.key === f.cat)) f.cat = 'altro';
   if (f.lat === null || f.lon === null) f.lat = f.lon = null;
+  const cat = CATEGORIES.some((c) => c.key === old?.cat) ? old.cat : 'altro';
+  const status = old?.status === 'visited' ? 'visited' : 'wish';
   const prefName = isNew ? q.get('name') || '' : '';
 
   let busy = false, seq = 0, view = f.country === 'IT' ? 'italia' : 'world';
-  let found = [], searchMsg = '', locMsg = '', saving = false;
+  let found = [], searchMsg = '', locMsg = '', saving = false, searching = false;
   let map = null;
 
   const hasPos = () => f.lat !== null;
   const home = old ? `#luogo/${encodeURIComponent(id)}` : '#luoghi';
 
-  const lists = {
-    todo: () => `<ul class="todo edit">${f.todo.map((t, i) => `<li><label class="check"><input type="checkbox" data-todo-done="${i}"${t.done ? ' checked' : ''} aria-label="Fatto"></label>`
-      + `<input type="text" data-todo-text="${i}" value="${esc(t.text)}" maxlength="120" aria-label="Cosa da fare">`
-      + `<button type="button" class="icon-btn" data-rm="todo:${i}" aria-label="Rimuovi">×</button></li>`).join('')}</ul>
-      <button type="button" class="btn" data-add="todo">Aggiungi cosa da fare</button>`,
-    links: () => f.links.map((l, i) => `<div class="link-row"><div class="two">
-        <input type="text" data-link-label="${i}" value="${esc(l.label)}" placeholder="Nome" aria-label="Nome del link" maxlength="60">
-        <input type="url" data-link-url="${i}" value="${esc(l.url)}" placeholder="https://…" aria-label="Indirizzo del link" autocapitalize="off" spellcheck="false"></div>
-        <button type="button" class="icon-btn" data-rm="links:${i}" aria-label="Rimuovi link">×</button>
-        <p class="error" data-link-err="${i}" hidden></p></div>`).join('')
-      + '<button type="button" class="btn" data-add="links">Aggiungi link</button>',
-    visits: () => f.visits.map((d, i) => `<div class="link-row"><input type="date" data-visit="${i}" value="${esc(d)}" aria-label="Data della visita">`
-      + `<button type="button" class="icon-btn" data-rm="visits:${i}" aria-label="Rimuovi visita">×</button></div>`).join('')
-      + '<button type="button" class="btn" data-add="visits">Aggiungi visita</button>',
-  };
-
   function geoHtml() {
-    const regs = f.country === 'IT' ? `<label class="field">Regione<select data-region>${opt('', '—', !f.region)}${regions.map((r) => opt(r, r, r === f.region)).join('')}</select></label>
-      <label class="field">Provincia<select data-province>${opt('', '—', !f.province)}${provinces
-    .filter((p) => !f.region || p.r === f.region).map((p) => opt(p.n, p.n, p.n === f.province)).join('')}</select></label>` : '';
-    return `<label class="field">Paese<select data-country>${opt('', '—', !f.country)}${countries.map(([k, n]) => opt(k, n, k === f.country)).join('')}</select></label>${regs}`;
+    const reg = f.country === 'IT' ? `<label class="field">Regione<select data-region>${opt('', '—', !f.region)}${regions.map((r) => opt(r, r, r === f.region)).join('')}</select></label>` : '';
+    return `<label class="field">Paese<select data-country>${opt('', '—', !f.country)}${countries.map(([k, n]) => opt(k, n, k === f.country)).join('')}</select></label>${reg}`;
   }
 
   function posHtml() {
@@ -102,16 +76,16 @@ export async function render(el, ctx) {
       ${found.length ? `<ul class="rows">${found.map((r, i) => `<li><button type="button" class="row" data-pick="${i}"><span><b>${esc(r.name)}</b><small>${esc(r.label)}</small></span></button></li>`).join('')}</ul>` : ''}`;
   }
 
-  let searching = false;
-
   el.innerHTML = `<div class="top"><a class="back" href="${esc(home)}" data-act="cancel">‹ Annulla</a><h1 class="grow">${isNew ? 'Nuovo luogo' : 'Modifica luogo'}</h1></div>
     <form class="form" novalidate>
       <label class="field">Nome<input type="text" name="name" maxlength="60" value="${esc(old ? old.name : prefName)}" autocomplete="off"></label>
       <p class="error" data-err="name" hidden></p>
-      <label class="field">Categoria<select name="cat">${CATEGORIES.map((c) => opt(c.key, c.label, c.key === f.cat)).join('')}</select></label>
+      <label class="field">Categoria<select name="cat">${CATEGORIES.map((c) => opt(c.key, c.label, c.key === cat)).join('')}</select></label>
       <fieldset><legend>Stato</legend><div class="seg" role="radiogroup" aria-label="Stato">
-        <label class="pick"><input type="radio" name="status" value="visited"${f.status === 'visited' ? ' checked' : ''}><span>Visitato</span></label>
-        <label class="pick"><input type="radio" name="status" value="wish"${f.status === 'wish' ? ' checked' : ''}><span>Da visitare</span></label></div></fieldset>
+        <label class="pick"><input type="radio" name="status" value="visited"${status === 'visited' ? ' checked' : ''}><span>Visitato</span></label>
+        <label class="pick"><input type="radio" name="status" value="wish"${status === 'wish' ? ' checked' : ''}><span>Da visitare</span></label></div></fieldset>
+      <label class="field" data-date${status === 'visited' ? '' : ' hidden'}>Data<input type="date" name="date" value="${esc(old?.date || '')}"></label>
+      <p class="error" data-err="date" hidden></p>
       <fieldset><legend>Posizione</legend>
         <div class="two"><input type="search" data-search placeholder="Cerca un luogo" aria-label="Cerca un luogo" autocomplete="off"><button type="button" class="btn" data-act="search">Cerca</button></div>
         <div data-results></div>
@@ -121,52 +95,20 @@ export async function render(el, ctx) {
         <div class="map-wrap mini" data-picker></div>
         <div data-pos></div>
       </fieldset>
-      <fieldset><legend>Voto</legend><div class="stars" data-stars role="group" aria-label="Voto"></div></fieldset>
-      <label class="check"><input type="checkbox" name="fav"${f.fav ? ' checked' : ''}><span>Preferito ♥</span></label>
-      <label class="field">Tag<input type="text" name="tags" value="${esc((old?.tags || []).join(', '))}" placeholder="mare, estate" autocapitalize="off"><span class="field-hint">Separati da virgole</span></label>
-      <label class="field">Compagni<input type="text" name="with" value="${esc((old?.with || []).join(', '))}" placeholder="Anna, Marco"><span class="field-hint">Separati da virgole</span></label>
-      <label class="field">Note<textarea name="note">${esc(old?.note || '')}</textarea></label>
-      <fieldset><legend>Cose da fare</legend><div data-list="todo"></div></fieldset>
-      <fieldset><legend>Link</legend><div data-list="links"></div></fieldset>
-      <fieldset><legend>Periodo ideale</legend><div class="months-row" data-months></div></fieldset>
-      <label class="field">Budget stimato (€)<input type="text" inputmode="decimal" name="budget" value="${old && num(old.budget) ? esc(String(old.budget).replace('.', ',')) : ''}" placeholder="Facoltativo"></label>
-      <p class="error" data-err="budget" hidden></p>
-      <fieldset><legend>Visite</legend><div data-list="visits"></div></fieldset>
+      <label class="field">Nota<textarea name="note">${esc(old?.note || '')}</textarea></label>
       <p class="error" data-err="form" hidden></p>
       <div class="btn-row"><button type="submit" class="btn primary" data-act="save">Salva</button><a class="btn" href="${esc(home)}" data-act="cancel">Annulla</a></div>
     </form>`;
 
   const $ = (s) => el.querySelector(s);
   const form = $('form');
-
-  function drawStars() {
-    $('[data-stars]').innerHTML = [1, 2, 3, 4, 5].map((n) =>
-      `<button type="button" data-rate="${n}" class="${n <= (f.rating || 0) ? 'on' : ''}" aria-label="${n} su 5" aria-pressed="${n === f.rating}">★</button>`).join('');
-  }
-  function drawMonths() {
-    $('[data-months]').innerHTML = MONTHS.map((m, i) =>
-      `<label class="pick"><input type="checkbox" data-month="${i + 1}"${f.months.includes(i + 1) ? ' checked' : ''}><span>${m}</span></label>`).join('');
-  }
-  const drawList = (k) => { $(`[data-list="${k}"]`).innerHTML = lists[k](); };
   const drawPos = () => { $('[data-pos]').innerHTML = posHtml(); };
   const drawResults = () => { $('[data-results]').innerHTML = resultsHtml(); };
 
-  /** Copies typed values of the list editors into `f` (before a redraw of a list). */
-  function sync() {
-    el.querySelectorAll('[data-todo-text]').forEach((i) => { f.todo[+i.dataset.todoText].text = i.value; });
-    el.querySelectorAll('[data-todo-done]').forEach((i) => { f.todo[+i.dataset.todoDone].done = i.checked; });
-    el.querySelectorAll('[data-link-label]').forEach((i) => { f.links[+i.dataset.linkLabel].label = i.value; });
-    el.querySelectorAll('[data-link-url]').forEach((i) => { f.links[+i.dataset.linkUrl].url = i.value; });
-    el.querySelectorAll('[data-visit]').forEach((i) => { f.visits[+i.dataset.visit] = i.value; });
-  }
-
   // ---- Position ----
 
-  const points = () => (hasPos() ? [{ id: 'sel', lat: f.lat, lon: f.lon, state: f.status === 'visited' ? 'visited' : 'wish' }] : []);
-
-  function mapView() {
-    return { view, level: 'provinces', geo, points: points(), interactive: true, onTap: (lat, lon) => setPos(lat, lon) };
-  }
+  const points = () => (hasPos() ? [{ id: 'sel', lat: f.lat, lon: f.lon, state: form.elements.status.value }] : []);
+  const zoomOf = (v) => (v === 'italia' ? 6 : 8);
 
   /** New position: store it, compute the areas, redraw only the position parts. `focus` re-frames the map. */
   async function setPos(lat, lon, focus = false, name = '') {
@@ -178,7 +120,7 @@ export async function render(el, ctx) {
     locMsg = 'Calcolo di paese e regione…';
     drawPos();
     const upd = { points: points() };
-    if (focus) upd.focus = { lat: f.lat, lon: f.lon, zoom: view === 'italia' ? 6 : 8 };
+    if (focus) upd.focus = { lat: f.lat, lon: f.lon, zoom: zoomOf(view) };
     map.update(upd);
     let r = null;
     try {
@@ -200,7 +142,7 @@ export async function render(el, ctx) {
 
   function setView(v) {
     view = v;
-    map.update(hasPos() ? { view, focus: { lat: f.lat, lon: f.lon, zoom: v === 'italia' ? 6 : 8 } } : { view });
+    map.update(hasPos() ? { view, focus: { lat: f.lat, lon: f.lon, zoom: zoomOf(v) } } : { view });
   }
 
   async function doSearch() {
@@ -254,36 +196,17 @@ export async function render(el, ctx) {
 
   async function save() {
     if (saving) return;
-    sync();
-    for (const k of ['name', 'budget', 'form']) fail(k, '');
-    el.querySelectorAll('[data-link-err]').forEach((p) => { p.hidden = true; });
+    for (const k of ['name', 'date', 'form']) fail(k, '');
     const name = form.elements.name.value.trim();
+    const visited = form.elements.status.value === 'visited';
+    const date = visited ? form.elements.date.value : '';
     let ok = true;
     if (!name || name.length > 60) {
       fail('name', 'Il nome è obbligatorio (massimo 60 caratteri)');
       ok = false;
     }
-    const raw = form.elements.budget.value.trim();
-    const budget = raw === '' ? null : parseNum(raw);
-    if (budget !== null && (!Number.isFinite(budget) || budget < 0)) {
-      fail('budget', 'Budget non valido: usa un numero uguale o maggiore di zero');
-      ok = false;
-    }
-    const links = [];
-    f.links.forEach((l, i) => {
-      const url = String(l.url ?? '').trim(), label = String(l.label ?? '').trim();
-      if (!url && !label) return;
-      const u = safeUrl(url);
-      if (!u) {
-        const p = $(`[data-link-err="${i}"]`);
-        p.textContent = 'Link non valido: usa un indirizzo http o https';
-        p.hidden = false;
-        ok = false;
-      } else links.push({ label: label || u, url: u });
-    });
-    const visits = f.visits.filter(Boolean);
-    if (visits.some((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d))) {
-      fail('form', 'Controlla le date delle visite');
+    if (date && !DAY.test(date)) {
+      fail('date', 'Data non valida');
       ok = false;
     }
     if (!ok) {
@@ -296,12 +219,8 @@ export async function render(el, ctx) {
     try {
       const pid = await store.savePlace({
         ...(id ? { id } : {}),
-        name, cat: form.elements.cat.value, status: form.elements.status.value,
-        lat: f.lat, lon: f.lon, country: f.country, region: f.region, province: f.province,
-        rating: f.rating, fav: form.elements.fav.checked,
-        tags: list(form.elements.tags.value), with: list(form.elements.with.value), note: form.elements.note.value.trim(),
-        todo: f.todo.map((t) => ({ ...t, text: String(t.text).trim() })).filter((t) => t.text),
-        links, months: [...f.months].sort((a, b) => a - b), budget, visits: [...new Set(visits)].sort(),
+        name, cat: form.elements.cat.value, status: visited ? 'visited' : 'wish', date: date || null,
+        lat: f.lat, lon: f.lon, country: f.country, region: f.region, note: form.elements.note.value.trim(),
       });
       if (trip) {
         const t = store.getDoc().trips.find((x) => x.id === trip.id && !x.deleted);
@@ -318,14 +237,11 @@ export async function render(el, ctx) {
 
   // ---- Wiring ----
 
-  drawStars();
-  drawMonths();
-  for (const k of Object.keys(lists)) drawList(k);
   drawPos();
   drawResults();
   map = createMap($('[data-picker]'), {
-    ...mapView(),
-    focus: hasPos() ? { lat: f.lat, lon: f.lon, zoom: view === 'italia' ? 6 : 8 } : undefined,
+    view, geo, points: points(), interactive: true, onTap: (lat, lon) => setPos(lat, lon),
+    focus: hasPos() ? { lat: f.lat, lon: f.lon, zoom: zoomOf(view) } : undefined,
   });
   if (isNew && hasPos() && !q.get('country')) setPos(f.lat, f.lon);   // prefilled by lat / lon only: compute the areas
 
@@ -337,22 +253,15 @@ export async function render(el, ctx) {
   el.onchange = (e) => {
     const t = e.target;
     if (t.name === 'pview') setView(t.value);
-    else if (t.name === 'cat') f.cat = t.value;
-    else if (t.dataset.month) {
-      const m = +t.dataset.month;
-      f.months = t.checked ? [...new Set([...f.months, m])] : f.months.filter((x) => x !== m);
+    else if (t.name === 'status') {
+      $('[data-date]').hidden = t.value !== 'visited';
+      map.update({ points: points() });
     } else if (t.matches('[data-country]')) {
       f.country = t.value || null;
-      if (f.country !== 'IT') f.region = f.province = null;
+      if (f.country !== 'IT') f.region = null;
       drawPos();
     } else if (t.matches('[data-region]')) {
       f.region = t.value || null;
-      if (f.province && f.region && provinces.find((p) => p.n === f.province)?.r !== f.region) f.province = null;
-      drawPos();
-    } else if (t.matches('[data-province]')) {
-      f.province = t.value || null;
-      if (f.province && !f.region) f.region = provinces.find((p) => p.n === f.province)?.r ?? null;
-      drawPos();
     }
   };
   el.onclick = (e) => {
@@ -369,7 +278,7 @@ export async function render(el, ctx) {
       seq++;
       busy = false;
       f.lat = f.lon = null;
-      f.country = f.region = f.province = null;
+      f.country = f.region = null;
       locMsg = '';
       drawPos();
       map.update({ points: [] });
@@ -380,23 +289,6 @@ export async function render(el, ctx) {
       searchMsg = '';
       drawResults();
       setPos(r.lat, r.lon, true, r.name);
-    } else if (d.rate) {
-      const n = +d.rate;
-      f.rating = f.rating === n ? null : n;
-      drawStars();
-      $(`[data-rate="${n}"]`).focus();
-    } else if (d.add) {
-      sync();
-      f[d.add].push(d.add === 'todo' ? { id: newId('a'), text: '', done: false } : d.add === 'links' ? { label: '', url: '' } : ctx.today);
-      drawList(d.add);
-      const fields = el.querySelectorAll(`[data-list="${d.add}"] input:not([type="checkbox"])`);
-      fields[d.add === 'links' ? fields.length - 2 : fields.length - 1]?.focus();
-    } else if (d.rm) {
-      sync();
-      const [k, i] = d.rm.split(':');
-      f[k].splice(+i, 1);
-      drawList(k);
-      $(`[data-add="${k}"]`).focus();
     }
   };
 

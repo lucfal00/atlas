@@ -4,8 +4,8 @@
 //
 // createMap(el, opts) appends an <svg> to `el` and returns { update(opts), destroy(), camera() }.
 // opts (all optional except view and geo):
-//   view 'world' | 'italia'; level 'regions' | 'provinces' (Italia only); geo { world, italia } (store.getGeo());
-//   areas Map<'c:IT' | 'r:Campania' | 'p:Napoli', 'visited' | 'planned' | 'wish'> (absent = never);
+//   view 'world' | 'italia' (Italia = regions, each drawn from its provinces); geo { world, italia } (store.getGeo());
+//   areas Map<'c:IT' | 'r:Campania', 'visited' | 'wish'> (absent = never);
 //   points [{ id, lat, lon, state }]; lines [[lat, lon], …] (first point gets the home marker);
 //   interactive (default true; false = static: no gestures, no taps, page scroll passes through);
 //   focus { lat, lon, zoom } or fit 'points' | 'lines': one-shot framing, applied at creation, on a view change
@@ -21,8 +21,8 @@ const FIT = 0.96;                                   // 1× leaves a thin margin 
 const TAP_MS = 300, LONG_MS = 500, DBL_MS = 300, SLOP = 8, DBL_PX = 30, ANIM_MS = 260;
 const CELL = 44, R_DOT = 6, R_HIT = 22, FIT_PAD = 48;
 const CTX_DEG = 10;                                 // neighbouring countries drawn this far around Italy
-const STATES = new Set(['visited', 'planned', 'wish']);
-const RANK = { wish: 1, planned: 2, visited: 3 };
+const STATES = new Set(['visited', 'wish']);
+const RANK = { wish: 1, visited: 2 };
 const PROJ = { world: [equalEarth, equalEarthInverse], italia: [italyProj, italyInverse] };
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -97,7 +97,7 @@ function layers(view, geo) {
 // ---- Component ---------------------------------------------------------------
 
 export function createMap(el, opts) {
-  let o = { interactive: true, level: 'regions', ...opts };
+  let o = { interactive: true, ...opts };
   let pendingCam = { focus: o.focus, fit: o.fit };   // framing waits for a non-zero size
   let b = null, paths = [], byKey = new Map(), painted = new Map(), groups = [];
   let W = 0, H = 0, k0 = 1, k = 1, cx = 0, cy = 0, ready = false, drawnK = 0;
@@ -113,7 +113,7 @@ export function createMap(el, opts) {
 
   // ---- Layers ----
 
-  const keyOf = (f) => (o.view === 'world' ? `c:${f.k}` : o.level === 'provinces' ? `p:${f.n}` : `r:${f.r}`);
+  const keyOf = (f) => (o.view === 'world' ? `c:${f.k}` : `r:${f.r}`);
   const stateOf = (key) => {
     const s = o.areas instanceof Map ? o.areas.get(key) : o.areas?.[key];
     return STATES.has(s) ? s : '';
@@ -129,7 +129,7 @@ export function createMap(el, opts) {
     drawLines();
   }
 
-  /** Area keys follow the view and level; regions level = provinces coloured by their region, borderless. */
+  /** Area keys follow the view; Italy = provinces coloured by their region, borderless. */
   function rekey() {
     byKey = new Map();
     painted = new Map();
@@ -139,7 +139,7 @@ export function createMap(el, opts) {
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push(paths[i]);
     });
-    areasG.setAttribute('class', `areas lvl-${o.view === 'world' ? 'world' : o.level === 'provinces' ? 'provinces' : 'regions'}`);
+    areasG.setAttribute('class', `areas v-${o.view}`);
     restyle();
   }
 
@@ -412,7 +412,6 @@ export function createMap(el, opts) {
       const cam = 'focus' in next || 'fit' in next ? { focus: next.focus, fit: next.fit } : null;
       const rebuilt = o.view !== prev.view || o.geo !== prev.geo;
       if (rebuilt) buildView();
-      else if (o.level !== prev.level) rekey();
       else if ('areas' in next) restyle();
       if (!rebuilt && 'lines' in next) drawLines();
       if (rebuilt || cam) {

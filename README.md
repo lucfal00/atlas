@@ -1,16 +1,15 @@
 # Atlas
 
-Atlante personale dei luoghi visitati e da visitare: mappa, viaggi con costi e diario, statistiche. App web installabile (PWA) che funziona offline, senza librerie esterne e senza build. Interfaccia in italiano, importi in euro.
+Atlante personale dei luoghi visitati e da visitare: mappa e viaggi. App web installabile (PWA) che funziona offline, senza librerie esterne e senza build. Interfaccia in italiano, importi in euro.
 
 Indirizzo: <https://lucfal00.github.io/atlas/>
 
 ## Funzioni
 
-- **Mappa**: atlante disegnato dai confini Natural Earth, vista Mondo o Italia (regioni e province). Aree colorate per stato (visitato, in programma, da visitare, mai), punti per i luoghi, raggruppamento a zoom basso. Tocco su un'area per vedere luoghi e viaggi e segnarla a mano come visitata; pressione lunga su un punto vuoto per creare un luogo.
-- **Luoghi**: elenco con filtri e ordinamenti. Ogni luogo ha categoria, stato, valutazione a stelle, preferito, note, link, tag, compagni, mesi ideali, budget, visite con data e lista di cose da fare. Posizione da ricerca per nome, tocco sulla mappa o posizione attuale; paese, regione e provincia sono calcolati sul dispositivo.
-- **Viaggi**: date, tappe ordinate, percorso sulla mappa con distanza stimata, budget e spese per categoria con barre e totali, costo per notte, diario giorno per giorno con luoghi del giorno. Le pagine del diario fuori dalle date del viaggio restano visibili in "Pagine fuori dalle date".
-- **Statistiche** e **Il tuo anno in viaggio** (`#anno/AAAA`): paesi, regioni e province, giorni, chilometri, spese, estremi geografici.
-- **Impostazioni**: tema (automatico, chiaro, scuro), città di casa, sincronizzazione, backup, crediti.
+- **Mappa**: atlante disegnato dai confini Natural Earth, vista Mondo o Italia (regioni). Aree colorate per stato (visitato, da visitare, mai), punti per i luoghi (pieno = visitato, anello = da visitare), raggruppamento a zoom basso. Tre numeri in alto: paesi, regioni (su 20) e luoghi visitati. Tocco su un'area per vedere i luoghi e segnarla a mano come visitata; pressione lunga su un punto vuoto per creare un luogo.
+- **Luoghi**: elenco con ricerca per nome. Ogni luogo ha categoria, stato (visitato o da visitare), data facoltativa, nota e posizione (ricerca per nome, tocco sulla mappa o posizione attuale); paese e regione sono calcolati sul dispositivo.
+- **Viaggi**: date, tappe ordinate, percorso sulla mappa, spesa totale e nota. I luoghi di un viaggio passato o in corso contano come visitati.
+- **Impostazioni**: tema (automatico, chiaro, scuro), città di casa (inizio del percorso), sincronizzazione, backup, crediti.
 - Funziona offline dopo la prima apertura; l'unica cosa che richiede internet è la ricerca di un luogo per nome.
 
 ## Installazione
@@ -38,12 +37,8 @@ Il token resta solo su quel dispositivo e non viene mai incluso nei backup. Se p
 
 Impostazioni, sezione Backup:
 
-- **Esporta backup**: salva un file JSON con luoghi, viaggi, diario e segni (non il token). Su iPhone si apre il foglio di condivisione ("Salva in File").
+- **Esporta backup**: salva un file JSON con luoghi, viaggi e segni (non il token). Su iPhone si apre il foglio di condivisione ("Salva in File").
 - **Importa backup**: unisce il file ai dati presenti, senza cancellare nulla. Se nel file ci sono singoli elementi non validi vengono ignorati e l'app dice quanti.
-
-## Importare l'atlante dei weekend
-
-Il file `seed/weekend.json` contiene 8 luoghi e 2 viaggi in programma (Dublino e Atene). Per caricarlo: Impostazioni, Backup, Importa backup, scegli `seed/weekend.json` (scaricalo dal repository). Si può rigenerare con `node scripts/make-seed.mjs`.
 
 ## Limiti
 
@@ -55,7 +50,7 @@ Il file `seed/weekend.json` contiene 8 luoghi e 2 viaggi in programma (Dublino e
 
 ## Crediti
 
-- Confini del mondo e di regioni e province italiane: [Natural Earth](https://www.naturalearthdata.com/) (pubblico dominio), semplificati da `npm run geo`.
+- Confini del mondo e dell'Italia: [Natural Earth](https://www.naturalearthdata.com/) (pubblico dominio), semplificati da `npm run geo`.
 - Ricerca luoghi: [OpenStreetMap](https://www.openstreetmap.org/copyright) tramite Nominatim, solo al tocco su Cerca (al massimo una richiesta al secondo). Dati © collaboratori di OpenStreetMap, licenza ODbL.
 
 ## Sviluppo
@@ -69,4 +64,4 @@ npm run geo       # rigenera i dati geografici in geo/ (solo sviluppo, richiede 
 npm run icons     # rigenera le icone in icons/
 ```
 
-Dopo ogni modifica ai file dell'app aggiorna il nome della cache in `sw.js` (`atlas-v1`, `atlas-v2`, ...) così i dispositivi scaricano la nuova versione.
+Dopo ogni modifica ai file dell'app aggiorna il nome della cache in `sw.js` (`atlas-v3`, `atlas-v4`, ...) così i dispositivi scaricano la nuova versione.

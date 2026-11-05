@@ -1,14 +1,13 @@
 // Offline support. Pages: network first (a new version shows on the next launch), cache when offline.
 // Other same-origin files: answer from cache, refresh the cache in the background.
 // Cross-origin requests (api.github.com, nominatim.openstreetmap.org) are never touched.
-const CACHE = 'atlas-v2';
+const CACHE = 'atlas-v3';
 const FILES = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './js/app.js', './js/db.js', './js/store.js', './js/logic.js', './js/geo.js', './js/merge.js',
-  './js/map.js', './js/crypto.js', './js/sync.js', './js/search.js', './js/charts.js', './js/ui.js',
+  './js/map.js', './js/crypto.js', './js/sync.js', './js/search.js', './js/ui.js',
   './js/views/map.js', './js/views/places.js', './js/views/place.js', './js/views/place-edit.js',
-  './js/views/trips.js', './js/views/trip.js', './js/views/trip-edit.js', './js/views/diary.js',
-  './js/views/stats.js', './js/views/year.js', './js/views/settings.js',
+  './js/views/trips.js', './js/views/trip.js', './js/views/trip-edit.js', './js/views/settings.js',
   './geo/world.json', './geo/italia.json',
   './icons/atlas-v1.svg', './icons/atlas-v1-192.png', './icons/atlas-v1-512.png',
   './icons/atlas-v1-maskable-512.png', './icons/atlas-v1-apple-180.png',
