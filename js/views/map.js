@@ -185,22 +185,9 @@ export async function render(el, ctx) {
     const p = live(doc.places).find((x) => x.id === id);
     if (!p) return;
     const st = placeState(doc, p, today);
-    const photo = p.cover || live(doc.photos).find((f) => f.place === id)?.id;
-    const s = show(`<div class="cover map-ph">${photo ? '' : 'Nessuna foto'}</div>
-      <h2 id="${TITLE}" class="map-prev-title">${esc(p.name || 'Senza nome')}</h2>
+    show(`<h2 id="${TITLE}" class="map-prev-title">${esc(p.name || 'Senza nome')}</h2>
       <p class="map-sheet-meta"><small>${esc(catLabel(p.cat))}</small><span class="pill ${st}">${LABEL[st]}</span></p>
       <a class="btn primary block" href="${link('luogo', id)}">Apri</a>`);
-    if (!photo) return;
-    store.photoUrl(photo, 'thumb').then((url) => {
-      const box = s.el.querySelector('.map-ph');
-      if (!box) return;
-      if (!url) {
-        box.textContent = 'Foto non disponibile';
-        return;
-      }
-      const img = Object.assign(new Image(), { className: 'cover map-ph', alt: '', src: url });
-      box.replaceWith(img);
-    });
   }
 
   function onCluster(ids) {

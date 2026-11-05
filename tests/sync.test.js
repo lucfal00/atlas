@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ITERATIONS, toB64, fromB64, randomBytes, deriveKey, exportKey, importKey,
-  seal, parseEnvelope, unseal, gzip, gunzip, sealBytes, openBytes,
+  seal, parseEnvelope, unseal, gzip, gunzip,
 } from '../js/crypto.js';
 import {
-  SyncError, makeRepoApi, connect, syncOnce, uploadPhoto, downloadPhoto, deletePhoto,
+  SyncError, makeRepoApi, connect, syncOnce,
 } from '../js/sync.js';
 import { emptyDoc } from '../js/logic.js';
 import { validateDoc } from '../js/merge.js';
@@ -265,7 +265,7 @@ test('envelope: parseEnvelope rejects other apps, other compression, bad shapes 
   assert.throws(() => parseEnvelope('not json'));
 });
 
-// ---- crypto: gzip and binary seal --------------------------------------
+// ---- crypto: gzip --------------------------------------
 
 test('gzip/gunzip: round trip, real compression, garbage rejected', async () => {
   const input = enc.encode('abc'.repeat(5000));
@@ -275,24 +275,6 @@ test('gzip/gunzip: round trip, real compression, garbage rejected', async () => 
   assert.ok(z.length < input.length / 10);
   assert.deepEqual(await gunzip(z), input);
   await assert.rejects(gunzip(randomBytes(64)));
-});
-
-test('sealBytes/openBytes: IV ‖ ciphertext, AAD bound, fresh IV, tamper detected', async () => {
-  const key = await deriveKey('pw', randomBytes(16), 1000);
-  const plain = randomBytes(3000);
-  const a = await sealBytes(key, plain, 'f_x.thumb');
-  const b = await sealBytes(key, plain, 'f_x.thumb');
-  assert.ok(a instanceof Uint8Array);
-  assert.equal(a.length, 12 + plain.length + 16);
-  assert.notDeepEqual(a.subarray(0, 12), b.subarray(0, 12), 'fresh IV');
-  assert.notDeepEqual(a.subarray(12, 12 + plain.length), plain, 'not plaintext');
-  assert.deepEqual(await openBytes(key, a, 'f_x.thumb'), plain);
-  await assert.rejects(openBytes(key, a, 'f_y.thumb'));
-  await assert.rejects(openBytes(key, a, 'f_x.full'));
-  const t = a.slice();
-  t[20] ^= 1;
-  await assert.rejects(openBytes(key, t, 'f_x.thumb'));
-  await assert.rejects(openBytes(await deriveKey('altra', randomBytes(16), 1000), a, 'f_x.thumb'));
 });
 
 // ---- makeRepoApi -------------------------------------------------------
@@ -323,15 +305,15 @@ test('api: every request carries the auth, version and no-store headers', async 
 test('api: getFile decodes wrapped base64, returns null on 404, encodes each path segment', async () => {
   const gh = makeGithub();
   const bytes = randomBytes(500);
-  const sha = gh.put('photos/a b.thumb', bytes);
+  const sha = gh.put('dir/a b.bin', bytes);
   const api = makeRepoApi(TOKEN, gh.fetch);
-  const f = await api.getFile(OWNER, REPO, 'photos/a b.thumb');
+  const f = await api.getFile(OWNER, REPO, 'dir/a b.bin');
   assert.equal(f.sha, sha);
   assert.deepEqual(f.bytes, bytes);
-  assert.ok(gh.calls[0].url.endsWith('/contents/photos/a%20b.thumb'));
+  assert.ok(gh.calls[0].url.endsWith('/contents/dir/a%20b.bin'));
   assert.equal(await api.getFile(OWNER, REPO, 'nope.json'), null);
   assert.equal(await api.getRaw(OWNER, REPO, 'nope.json'), null);
-  assert.deepEqual(await api.getRaw(OWNER, REPO, 'photos/a b.thumb'), bytes);
+  assert.deepEqual(await api.getRaw(OWNER, REPO, 'dir/a b.bin'), bytes);
 });
 
 test('api: content missing (file > 1 MB) → read through git/blobs/{sha}', async () => {
@@ -796,155 +778,4 @@ test('syncOnce: 401 → token, 403 → forbidden, 403 with limit → rate + rese
   gh.hook = null;
   gh.offline = true;
   await rejectsSync(run(), 'network', 'Rete non disponibile');
-});
-
-// ---- photos ------------------------------------------------------------
-
-test('photos: upload + download round trip; stored blob is IV ‖ AES-GCM, bound to its name', async () => {
-  const { gh, cfg } = await fresh();
-  const jpeg = randomBytes(5000);
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: jpeg, fetchFn: gh.fetch });
-  const put = gh.reqs('PUT', '/contents/photos/f_ab12cd.thumb');
-  assert.equal(put.length, 1);
-  assert.ok(!('sha' in put[0].body));
-  const stored = gh.repo.get('photos/f_ab12cd.thumb').bytes;
-  assert.equal(stored.length, 12 + jpeg.length + 16);
-  assert.notDeepEqual(stored.subarray(12, 12 + jpeg.length), jpeg);
-  assert.deepEqual(await downloadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', fetchFn: gh.fetch }), jpeg);
-  assert.equal(gh.reqs('GET', '/contents/photos/f_ab12cd.thumb')[0].headers.Accept, RAW);
-
-  const key = await importKey(cfg.key);
-  assert.deepEqual(await openBytes(key, stored, 'f_ab12cd.thumb'), jpeg);
-  await assert.rejects(openBytes(key, stored, 'f_zz99zz.thumb'), 'AAD of another photo');
-  await assert.rejects(openBytes(key, stored, 'f_ab12cd.full'), 'AAD of the other kind');
-});
-
-test('photos: full kind uses its own path and AAD', async () => {
-  const { gh, cfg } = await fresh();
-  const jpeg = randomBytes(2000);
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'full', bytes: jpeg, fetchFn: gh.fetch });
-  assert.ok(gh.repo.has('photos/f_ab12cd.full'));
-  assert.deepEqual(await openBytes(await importKey(cfg.key), gh.repo.get('photos/f_ab12cd.full').bytes, 'f_ab12cd.full'), jpeg);
-  assert.deepEqual(await downloadPhoto({ cfg, id: 'f_ab12cd', kind: 'full', fetchFn: gh.fetch }), jpeg);
-});
-
-test('photos: 422 because the file already exists → verified by a metadata read, not an error, file untouched', async () => {
-  const { gh, cfg } = await fresh();
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(100), fetchFn: gh.fetch });
-  const before = gh.repo.get('photos/f_ab12cd.thumb');
-  gh.calls.length = 0;
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(100), fetchFn: gh.fetch });
-  assert.equal(gh.reqs('PUT', '/contents/photos/f_ab12cd.thumb').length, 1);
-  assert.equal(gh.reqs('GET', '/contents/photos/f_ab12cd.thumb').length, 1, 'the 422 is checked with a read');
-  assert.equal(gh.repo.get('photos/f_ab12cd.thumb').sha, before.sha);
-  assert.equal(gh.calls.filter((c) => c.path.includes('/git/blobs/')).length, 0, 'metadata only, no blob download');
-});
-
-test('photos: 422 although the file does not exist → the original 422 error surfaces', async () => {
-  const { gh, cfg } = await fresh();
-  gh.hook = (req) => (req.method === 'PUT' ? reply(422, { message: 'Invalid request.' }) : undefined);
-  await assert.rejects(uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(100), fetchFn: gh.fetch }), (e) => {
-    assert.ok(e instanceof SyncError);
-    assert.equal(e.code, 'http');
-    assert.equal(e.status, 422);
-    assert.equal(e.message, 'Errore GitHub 422');
-    return true;
-  });
-  assert.equal(gh.reqs('GET', '/contents/photos/f_ab12cd.thumb').length, 1, 'the 422 was checked with a read');
-  assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
-});
-
-test('photos: 422 whose check cannot be completed (network) → that error surfaces', async () => {
-  const { gh, cfg } = await fresh();
-  gh.hook = (req) => {
-    if (req.method === 'PUT') return reply(422, { message: 'Invalid request.' });
-    if (req.method === 'GET') throw new TypeError('fetch failed');
-    return undefined;
-  };
-  await rejectsSync(
-    uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(10), fetchFn: gh.fetch }),
-    'network', 'Rete non disponibile',
-  );
-});
-
-test('photos: other upload errors surface (network, 403 rate limit)', async () => {
-  const { gh, cfg } = await fresh();
-  const args = { cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(10), fetchFn: gh.fetch };
-  gh.hook = () => reply(403, {}, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(RESET) });
-  await assert.rejects(uploadPhoto(args), (e) => e.code === 'rate' && e.resetAt === RESET * 1000);
-  gh.hook = null;
-  gh.offline = true;
-  await rejectsSync(uploadPhoto(args), 'network');
-});
-
-test('photos: downloading a missing photo → null; one that cannot be decrypted → format', async () => {
-  const { gh, cfg } = await fresh();
-  assert.equal(await downloadPhoto({ cfg, id: 'f_none', kind: 'thumb', fetchFn: gh.fetch }), null);
-  gh.put('photos/f_bad.thumb', randomBytes(200));
-  await rejectsSync(downloadPhoto({ cfg, id: 'f_bad', kind: 'thumb', fetchFn: gh.fetch }), 'format');
-});
-
-test('photos: deletePhoto removes thumb and full with their sha; absent files are not an error', async () => {
-  const { gh, cfg } = await fresh();
-  for (const kind of ['thumb', 'full']) {
-    await uploadPhoto({ cfg, id: 'f_ab12cd', kind, bytes: randomBytes(300), fetchFn: gh.fetch });
-  }
-  const shas = ['thumb', 'full'].map((k) => gh.repo.get(`photos/f_ab12cd.${k}`).sha);
-  await deletePhoto({ cfg, id: 'f_ab12cd', fetchFn: gh.fetch });
-  assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
-  assert.equal(gh.repo.has('photos/f_ab12cd.full'), false);
-  assert.deepEqual(gh.calls.filter((c) => c.method === 'DELETE').map((c) => c.body.sha), shas);
-
-  // everything already gone: only metadata reads, no DELETE, no error
-  gh.calls.length = 0;
-  await deletePhoto({ cfg, id: 'f_ab12cd', fetchFn: gh.fetch });
-  assert.equal(gh.calls.filter((c) => c.method === 'DELETE').length, 0);
-  assert.equal(gh.calls.filter((c) => c.method === 'GET').length, 2);
-});
-
-test('photos: deletePhoto of a full photo over 1 MB (no content in the answer) never downloads it', async () => {
-  const { gh, cfg } = await fresh();
-  const big = new Uint8Array(1100000);
-  for (let i = 0; i < big.length; i += 65536) globalThis.crypto.getRandomValues(big.subarray(i, i + 65536));
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(300), fetchFn: gh.fetch });
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'full', bytes: big, fetchFn: gh.fetch });
-  const full = gh.repo.get('photos/f_ab12cd.full');
-  const shas = ['thumb', 'full'].map((k) => gh.repo.get(`photos/f_ab12cd.${k}`).sha);
-  assert.ok(full.bytes.length > 1e6, 'the stored file is over 1 MB, so GitHub sends no content for it');
-
-  gh.calls.length = 0;
-  await deletePhoto({ cfg, id: 'f_ab12cd', fetchFn: gh.fetch });
-  assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
-  assert.equal(gh.repo.has('photos/f_ab12cd.full'), false);
-  assert.deepEqual(gh.calls.filter((c) => c.method === 'DELETE').map((c) => c.body.sha), shas);
-  assert.equal(gh.calls.filter((c) => c.path.includes('/git/blobs/')).length, 0, 'no blob downloaded');
-  assert.equal(gh.calls.filter((c) => c.headers.Accept === RAW).length, 0, 'no raw download either');
-});
-
-test('photos: deletePhoto with only one kind present: the missing one gets no DELETE', async () => {
-  const { gh, cfg } = await fresh();
-  await uploadPhoto({ cfg, id: 'f_ab12cd', kind: 'thumb', bytes: randomBytes(50), fetchFn: gh.fetch });
-  const sha = gh.repo.get('photos/f_ab12cd.thumb').sha;
-  gh.calls.length = 0;
-  await deletePhoto({ cfg, id: 'f_ab12cd', fetchFn: gh.fetch });
-  assert.equal(gh.repo.has('photos/f_ab12cd.thumb'), false);
-  const deletes = gh.calls.filter((c) => c.method === 'DELETE');
-  assert.equal(deletes.length, 1);
-  assert.ok(deletes[0].path.endsWith('/photos/f_ab12cd.thumb'));
-  assert.equal(deletes[0].body.sha, sha);
-});
-
-test('photos: deletePhoto when another device deletes the file between the read and the DELETE (404) → resolves, file absent', async () => {
-  const { gh, cfg } = await fresh();
-  await uploadPhoto({ cfg, id: 'f_ef34gh', kind: 'full', bytes: randomBytes(50), fetchFn: gh.fetch });
-  gh.hook = (req) => {
-    if (req.method === 'DELETE') gh.repo.delete('photos/f_ef34gh.full'); // the fake then answers 404
-    return undefined;
-  };
-  gh.calls.length = 0;
-  await deletePhoto({ cfg, id: 'f_ef34gh', fetchFn: gh.fetch });
-  const deletes = gh.calls.filter((c) => c.method === 'DELETE');
-  assert.equal(deletes.length, 1, 'the DELETE was sent and answered 404');
-  assert.ok(deletes[0].path.endsWith('/photos/f_ef34gh.full'));
-  assert.equal(gh.repo.has('photos/f_ef34gh.full'), false);
 });

@@ -1,4 +1,4 @@
-// Pure logic: dates, place/trip/area states, travel statistics, year in travel, photo suggestions.
+// Pure logic: dates, place/trip/area states, travel statistics, year in travel.
 // No DOM, no network, no storage. Dates are local 'YYYY-MM-DD' keys (string order = date order).
 
 import { haversine } from './geo.js';
@@ -45,7 +45,7 @@ export function newId(prefix) {
 
 export function emptyDoc() {
   return {
-    version: 1, places: [], trips: [], diary: {}, photos: [], marks: {},
+    version: 1, places: [], trips: [], diary: {}, marks: {},
     settings: { theme: 'auto', home: { name: 'Napoli', lat: 40.85, lon: 14.27 }, lastBackup: 0 },
   };
 }
@@ -278,38 +278,8 @@ export function yearInTravel(doc, year, today) {
     if (num(p.rating) && (!bestPlace || p.rating > bestPlace.rating)) bestPlace = p;
   }
 
-  const photos = live(doc.photos).filter((f) => num(f.taken) && new Date(f.taken).getFullYear() === year).length;
-
   return {
     trips, days: travelDays(doc, year, today), km: yearKm(doc, year, today), spend,
-    newCountries, bestPlace, photos, countries: [...countries].sort(),
+    newCountries, bestPlace, countries: [...countries].sort(),
   };
-}
-
-// ---- Photo suggestions -------------------------------------------------
-
-/** Nearest live place within 1 km, else newHere; trip + diary day containing the local date of `taken`. */
-export function suggestFromPhoto(doc, { lat, lon, taken } = {}) {
-  let place = null, newHere = false, trip = null, day = null;
-  if (num(lat) && num(lon)) {
-    let best = Infinity;
-    for (const p of live(doc.places)) {
-      if (!num(p.lat) || !num(p.lon)) continue;
-      const km = haversine(lat, lon, p.lat, p.lon);
-      if (km <= 1 && km < best) {
-        best = km;
-        place = p.id;
-      }
-    }
-    newHere = place === null;
-  }
-  if (num(taken)) {
-    const key = toKey(new Date(taken));
-    const t = live(doc.trips).filter((x) => x.from <= key && key <= x.to).sort(byFrom)[0];
-    if (t) {
-      trip = t.id;
-      day = key;
-    }
-  }
-  return { place, newHere, trip, day };
 }

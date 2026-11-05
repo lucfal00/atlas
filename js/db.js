@@ -1,4 +1,4 @@
-// IndexedDB: the only module that touches it. Database `atlas` v1; stores doc, full, thumb, meta (out-of-line keys), queue (auto-increment).
+// IndexedDB: the only module that touches it. Database `atlas` v1; stores doc, meta (out-of-line keys).
 // Errors propagate as the original DOMException (e.g. name === 'QuotaExceededError') so callers can map them.
 
 const NAME = 'atlas';
@@ -18,8 +18,7 @@ export function openDb() {
     const req = indexedDB.open(NAME, VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      for (const s of ['doc', 'full', 'thumb', 'meta']) db.createObjectStore(s);
-      db.createObjectStore('queue', { autoIncrement: true });
+      for (const s of ['doc', 'meta']) db.createObjectStore(s);
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -63,28 +62,3 @@ export const dbGet = (store, key) => run(store, 'readonly', (s) => s.get(key));
 export const dbPut = (store, key, value) => run(store, 'readwrite', (s) => s.put(value, key));
 export const dbDel = (store, key) => run(store, 'readwrite', (s) => s.delete(key));
 export const dbKeys = (store) => run(store, 'readonly', (s) => s.getAllKeys());
-
-// ---- Photo queue ---------------------------------------------------------
-
-/** op: { op: 'put' | 'del', id } → its queue key. */
-export const queueAdd = (op) => run('queue', 'readwrite', (s) => s.add(op));
-
-/** All pending operations in key (= insertion) order: [{ key, op, id }]. */
-export async function queueAll() {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction('queue', 'readonly');
-    const out = [];
-    const req = t.objectStore('queue').openCursor();
-    req.onsuccess = () => {
-      const c = req.result;
-      if (!c) return;
-      out.push({ key: c.key, op: c.value.op, id: c.value.id });
-      c.continue();
-    };
-    t.oncomplete = () => resolve(out);
-    t.onabort = () => reject(t.error ?? req.error ?? new Error('Transazione annullata'));
-  });
-}
-
-export const queueRemove = (key) => run('queue', 'readwrite', (s) => s.delete(key));

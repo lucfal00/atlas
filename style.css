@@ -109,10 +109,6 @@ button { cursor: pointer; }
 }
 .card.list { padding: 0; }
 .card.link { display: block; color: inherit; text-decoration: none; }
-.card.media { padding: 0; overflow: hidden; }
-.card.media .body { padding: 12px 16px 14px; }
-.card.media .body b { display: block; }
-.cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--empty); }
 details.card summary {
   display: flex; align-items: center; gap: 12px; min-height: 44px;   /* touch target; flex hides the native marker */
   cursor: pointer; font-weight: 600; list-style: none;
@@ -224,7 +220,6 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 .rows a.row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
 .rows .row b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rows .row span { min-width: 0; }
-.thumb { width: 52px; height: 52px; flex: none; border-radius: 12px; object-fit: cover; background: var(--empty); }
 .badge {
   width: 38px; height: 38px; flex: none; border-radius: 12px;
   display: grid; place-items: center; font-size: 1.2rem;
@@ -327,39 +322,6 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; margin:
 .settings .form small { margin-top: -4px; }
 .msg { margin: 12px 0 0; font-weight: 600; }
 .msg.err, .err-text { color: var(--danger); }
-
-/* ---- Photos ---------------------------------------------------------- */
-.photo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
-.photo-grid .ph {
-  position: relative; display: block; aspect-ratio: 1; padding: 0; border: 0; overflow: hidden;
-  border-radius: 8px; background: var(--empty); color: var(--muted);
-}
-.photo-grid .ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.photo-grid .ph.cover { outline: 2px solid var(--accent); outline-offset: -2px; }
-.photo-grid .ph.add { display: grid; place-items: center; border: 1.5px dashed var(--line); background: transparent; font-size: 1.6rem; }
-@media (min-width: 700px) { .photo-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-
-/* Full-screen viewer (covers the tab bar; sheets and toasts stay above it). */
-.viewer { position: fixed; inset: 0; z-index: 30; background: #000; color: #fff; }
-.viewer-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: pan-y; }
-.viewer-stage img { width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
-.viewer-bar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
-  padding: calc(env(safe-area-inset-top) + 8px) 12px 28px; background: linear-gradient(rgba(0, 0, 0, .6), transparent);
-}
-.viewer-bar .grow { flex: 1; min-width: 0; }
-.viewer-btn {
-  width: 44px; height: 44px; flex: none; border: 0; border-radius: 50%; display: inline-grid; place-items: center;
-  background: rgba(255, 255, 255, .16); color: #fff; font-size: 1.3rem; line-height: 1; text-decoration: none;
-}
-.viewer-nav { position: absolute; top: 50%; z-index: 2; transform: translateY(-50%); }
-.viewer-nav.prev { left: 8px; }
-.viewer-nav.next { right: 8px; }
-.viewer-cap {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; font-size: .95rem;
-  padding: 32px 16px calc(env(safe-area-inset-bottom) + 14px); background: linear-gradient(transparent, rgba(0, 0, 0, .72));
-}
-.viewer-cap small { display: block; color: rgba(255, 255, 255, .75); }
 
 /* ---- Map ------------------------------------------------------------- */
 .map-wrap {
@@ -471,6 +433,4 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 .map-sheet-end .btn { flex: 1; }
 .map-note { margin: -4px 0 0; font-size: .85rem; }
 .sheet-body .card.list { margin-bottom: 0; }
-.map-ph { display: grid; place-items: center; margin-bottom: 14px; border-radius: 12px; color: var(--muted); font-size: .9rem; }
-img.map-ph { display: block; }
 .map-prev-title { margin-bottom: 6px; }

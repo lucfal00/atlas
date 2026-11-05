@@ -2,7 +2,6 @@
 import { mergeDocs, validateDoc } from './merge.js';
 import {
   ITERATIONS, deriveKey, exportKey, importKey, seal, unseal, parseEnvelope, randomBytes, fromB64, toB64,
-  sealBytes, openBytes,
 } from './crypto.js';
 
 const API = 'https://api.github.com';
@@ -27,7 +26,6 @@ const MSG = {
   conflict: 'Riprova più tardi',
   gzip: 'Browser non supportato per la sincronizzazione',
   remote: 'Dati remoti non validi',
-  photo: 'Foto remota non valida',
   passwordConnect: 'Password errata',
   passwordSync: 'Password cambiata su un altro dispositivo: ricollega',
 };
@@ -247,50 +245,4 @@ export async function syncOnce({ cfg, local, fetchFn }) {
   const api = makeRepoApi(cfg.token, fetchFn);
   const { doc, count, pushed } = await reconcile({ api, cfg, key: await importKey(cfg.key), local, wrongKeyMsg: MSG.passwordSync });
   return { doc, count, pushed };
-}
-
-// ---- photos ------------------------------------------------------------
-
-function photoName(id, kind) {
-  if (kind !== 'thumb' && kind !== 'full') throw new Error(`Tipo foto non valido: ${kind}`);
-  return `${id}.${kind}`;
-}
-
-/**
- * Upload one encrypted file `photos/<id>.<kind>`. A 422 means "file already there" only if it really is:
- * checked with a metadata read, otherwise the 422 surfaces. An error of that read surfaces as it is.
- */
-export async function uploadPhoto({ cfg, id, kind, bytes, fetchFn }) {
-  const name = photoName(id, kind);
-  const api = makeRepoApi(cfg.token, fetchFn);
-  const sealed = await sealBytes(await importKey(cfg.key), bytes, name);
-  const path = `photos/${name}`;
-  try {
-    await api.putFile(cfg.owner, cfg.repo, path, sealed, undefined, 'Add photo');
-  } catch (e) {
-    if (!(e instanceof SyncError && e.code === 'http' && e.status === 422)) throw e;
-    if (!(await api.getFile(cfg.owner, cfg.repo, path, { metaOnly: true }))) throw e;
-  }
-}
-
-/** Decrypted photo bytes, or null when the file does not exist. */
-export async function downloadPhoto({ cfg, id, kind, fetchFn }) {
-  const name = photoName(id, kind);
-  const raw = await makeRepoApi(cfg.token, fetchFn).getRaw(cfg.owner, cfg.repo, `photos/${name}`);
-  if (!raw) return null;
-  try {
-    return await openBytes(await importKey(cfg.key), raw, name);
-  } catch {
-    throw new SyncError('format', MSG.photo);
-  }
-}
-
-/** Delete thumb then full; a file that is already gone is fine. */
-export async function deletePhoto({ cfg, id, fetchFn }) {
-  const api = makeRepoApi(cfg.token, fetchFn);
-  for (const kind of ['thumb', 'full']) {
-    const path = `photos/${photoName(id, kind)}`;
-    const file = await api.getFile(cfg.owner, cfg.repo, path, { metaOnly: true });
-    if (file) await api.deleteFile(cfg.owner, cfg.repo, path, file.sha);
-  }
 }

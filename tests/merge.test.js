@@ -7,7 +7,6 @@ import { emptyDoc } from '../js/logic.js';
 
 const place = (id, updatedAt, extra = {}) => ({ id, name: id, status: 'wish', deleted: false, updatedAt, ...extra });
 const trip = (id, updatedAt, extra = {}) => ({ id, title: id, deleted: false, updatedAt, ...extra });
-const photo = (id, updatedAt, extra = {}) => ({ id, place: null, trip: null, deleted: false, updatedAt, ...extra });
 
 function docWith(parts = {}) {
   return { ...emptyDoc(), ...parts };
@@ -30,7 +29,6 @@ test('validateDoc: accepts the empty document and a populated one', () => {
   const d = docWith({
     places: [place('l_a', 1)],
     trips: [trip('v_a', 1)],
-    photos: [photo('f_a', 1)],
     diary: { 'v_a:2026-06-10': { text: 'x', places: [], t: 1 } },
     marks: { 'c:PT': { s: 'visited', t: 1 } },
   });
@@ -45,8 +43,8 @@ test('validateDoc: rejects non-objects and wrong version', () => {
   assert.equal(validateDoc(noVersion), false);
 });
 
-test('validateDoc: places, trips, photos must be arrays of objects with a string id', () => {
-  for (const key of ['places', 'trips', 'photos']) {
+test('validateDoc: places and trips must be arrays of objects with a string id', () => {
+  for (const key of ['places', 'trips']) {
     assert.equal(validateDoc({ ...emptyDoc(), [key]: {} }), false);
     assert.equal(validateDoc({ ...emptyDoc(), [key]: null }), false);
     assert.equal(validateDoc({ ...emptyDoc(), [key]: undefined }), false);
@@ -85,32 +83,28 @@ test('mergeDocs: throws "Documento non valido" when either side is invalid', () 
 
 // ---- mergeDocs: arrays by id -------------------------------------------
 
-test('mergeDocs: places, trips, photos — greater updatedAt wins per id', () => {
+test('mergeDocs: places, trips — greater updatedAt wins per id', () => {
   const local = docWith({
     places: [place('l_new', 9, { name: 'local' }), place('l_old', 1, { name: 'local' })],
     trips: [trip('v_new', 9, { title: 'local' }), trip('v_old', 1, { title: 'local' })],
-    photos: [photo('f_new', 9, { caption: 'local' }), photo('f_old', 1, { caption: 'local' })],
   });
   const incoming = docWith({
     places: [place('l_new', 5, { name: 'incoming' }), place('l_old', 4, { name: 'incoming' })],
     trips: [trip('v_new', 5, { title: 'incoming' }), trip('v_old', 4, { title: 'incoming' })],
-    photos: [photo('f_new', 5, { caption: 'incoming' }), photo('f_old', 4, { caption: 'incoming' })],
   });
   const { doc, count } = mergeDocs(local, incoming);
   assert.deepEqual(doc.places.map((p) => p.name), ['local', 'incoming']);
   assert.deepEqual(doc.trips.map((t) => t.title), ['local', 'incoming']);
-  assert.deepEqual(doc.photos.map((f) => f.caption), ['local', 'incoming']);
   assert.deepEqual(doc.places.map((p) => p.updatedAt), [9, 4]);
-  assert.equal(count, 3);
+  assert.equal(count, 2);
 });
 
 test('mergeDocs: tie on updatedAt keeps local', () => {
-  const local = docWith({ places: [place('l_a', 5, { name: 'local' })], trips: [trip('v_a', 5, { title: 'local' })], photos: [photo('f_a', 5, { caption: 'local' })] });
-  const incoming = docWith({ places: [place('l_a', 5, { name: 'incoming' })], trips: [trip('v_a', 5, { title: 'incoming' })], photos: [photo('f_a', 5, { caption: 'incoming' })] });
+  const local = docWith({ places: [place('l_a', 5, { name: 'local' })], trips: [trip('v_a', 5, { title: 'local' })] });
+  const incoming = docWith({ places: [place('l_a', 5, { name: 'incoming' })], trips: [trip('v_a', 5, { title: 'incoming' })] });
   const { doc, count } = mergeDocs(local, incoming);
   assert.equal(doc.places[0].name, 'local');
   assert.equal(doc.trips[0].title, 'local');
-  assert.equal(doc.photos[0].caption, 'local');
   assert.equal(count, 0);
 });
 
@@ -123,13 +117,12 @@ test('mergeDocs: missing updatedAt counts as 0', () => {
 });
 
 test('mergeDocs: items present on one side only are kept', () => {
-  const local = docWith({ places: [place('l_loc', 1)], trips: [trip('v_loc', 1)], photos: [photo('f_loc', 1)] });
-  const incoming = docWith({ places: [place('l_inc', 1)], trips: [trip('v_inc', 1)], photos: [photo('f_inc', 1)] });
+  const local = docWith({ places: [place('l_loc', 1)], trips: [trip('v_loc', 1)] });
+  const incoming = docWith({ places: [place('l_inc', 1)], trips: [trip('v_inc', 1)] });
   const { doc, count } = mergeDocs(local, incoming);
   assert.deepEqual(ids(doc.places), ['l_loc', 'l_inc']);
   assert.deepEqual(ids(doc.trips), ['v_loc', 'v_inc']);
-  assert.deepEqual(ids(doc.photos), ['f_loc', 'f_inc']);
-  assert.equal(count, 3); // only the incoming-only ones are taken from incoming
+  assert.equal(count, 2); // only the incoming-only ones are taken from incoming
 });
 
 test('mergeDocs: order is local order (winner replaced in place), then incoming-only in incoming order', () => {
@@ -268,25 +261,23 @@ test('mergeDocs: count sums items taken from incoming across all collections', (
     places: [place('l_a', 1)],
     trips: [trip('v_a', 5)],
     diary: { k1: { t: 1 } },
-    photos: [photo('f_a', 5)],
     marks: { 'c:PT': { s: 'visited', t: 5 } },
   });
   const incoming = docWith({
     places: [place('l_a', 2), place('l_b', 1)],  // newer + new → 2
     trips: [trip('v_a', 1)],                     // older → 0
     diary: { k1: { t: 2 }, k2: { t: 1 } },       // newer + new → 2
-    photos: [photo('f_b', 1)],                   // new → 1
     marks: { 'c:PT': { s: null, t: 1 } },        // older → 0
     settings: { lastBackup: 1000 },              // not counted
   });
   const r = mergeDocs(local, incoming);
-  assert.equal(r.count, 5);
+  assert.equal(r.count, 4);
   assert.deepEqual(Object.keys(r).sort(), ['count', 'doc']);
 });
 
 test('mergeDocs: merging identical documents changes nothing and counts 0', () => {
   const d = docWith({
-    places: [place('l_a', 1)], trips: [trip('v_a', 2)], photos: [photo('f_a', 3)],
+    places: [place('l_a', 1)], trips: [trip('v_a', 2)],
     diary: { k: { t: 1 } }, marks: { 'c:PT': { s: 'visited', t: 1 } },
     settings: { theme: 'auto', lastBackup: 4 },
   });

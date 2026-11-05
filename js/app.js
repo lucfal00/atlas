@@ -18,7 +18,6 @@ import * as trips from './views/trips.js';
 import * as trip from './views/trip.js';
 import * as tripEdit from './views/trip-edit.js';
 import * as diary from './views/diary.js';
-import * as photoViewer from './views/photo-viewer.js';
 import * as stats from './views/stats.js';
 import * as year from './views/year.js';
 import * as settings from './views/settings.js';
@@ -29,7 +28,6 @@ const TAB_OF = {                                    // route name -> tab (data-v
   mappa: 'mappa', luoghi: 'luoghi', luogo: 'luoghi', viaggi: 'viaggi', viaggio: 'viaggi', diario: 'viaggi',
   stats: 'stats', anno: 'stats', impostazioni: 'impostazioni',
 };
-const PHOTO_TAB = { place: 'luoghi', trip: 'viaggi', day: 'viaggi' };   // foto: tab of the set it was opened from
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 let cur = null;                                     // route being shown
 let active = null;                                  // object returned by its view
@@ -54,7 +52,6 @@ function pick(name, p) {
     case 'viaggi': return [name, trips];
     case 'viaggio': return p[0] ? [name, edit ? tripEdit : trip] : ['viaggi', trips];
     case 'diario': return p[0] && DAY.test(p[1] || '') ? [name, diary] : ['viaggi', trips];
-    case 'foto': return p[0] ? [name, photoViewer] : ['mappa', map];
     case 'stats': return [name, stats];
     case 'anno': return /^\d{4}$/.test(p[0] || '') ? [name, year] : ['stats', stats];
     case 'impostazioni': return [name, settings];
@@ -71,10 +68,9 @@ function route() {
   const segs = rest.map(decode);
   const [name, view] = pick(raw, segs);
   const params = name === raw ? segs : [];                          // a fallback view gets no params
-  const origin = name === 'foto' ? ['place', 'trip', 'day'].find((k) => query.has(k)) : null;
   return {
     name, view, params, query,
-    tab: name === 'foto' ? PHOTO_TAB[origin] || '' : TAB_OF[name],
+    tab: TAB_OF[name],
     key: `${name}/${params.join('/')}`,
   };
 }

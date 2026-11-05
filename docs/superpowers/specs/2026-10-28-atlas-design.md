@@ -3,17 +3,19 @@
 Data: 2026-10-28
 Stato: approvato in brainstorming, in revisione utente
 
+Niente foto (decisione 2026-11-05: limiti di spazio su GitHub). Nessun salvataggio, caricamento, visore né copertina.
+
 ## 1. Obiettivo
 
-App personale per raccogliere i luoghi visitati e da visitare, organizzarli in viaggi con date, costi, diario e foto,
+App personale per raccogliere i luoghi visitati e da visitare, organizzarli in viaggi con date, costi e diario,
 e vederli su un atlante disegnato con statistiche. Stessa base tecnica e stessa famiglia visiva di Habits e Fitness.
 
 ## 2. Vincoli
 
-- iPhone (Safari, "Aggiungi a Home") + PC (Chrome/Edge, "Installa app"). Offline dopo la prima apertura (tranne ricerca per nome e foto mai scaricate).
+- iPhone (Safari, "Aggiungi a Home") + PC (Chrome/Edge, "Installa app"). Offline dopo la prima apertura (tranne la ricerca per nome).
 - Nessuna libreria esterna, nessun build step: HTML/CSS/JS (ES modules). Moduli comuni copiati da Habits e adattati.
 - GitHub Pages: repository pubblico `lucfal00/atlas` → `https://lucfal00.github.io/atlas/`.
-- Dati e foto sincronizzati cifrati in un repository GitHub **privato** dell'utente (`atlas-data`).
+- Dati sincronizzati cifrati in un repository GitHub **privato** dell'utente (`atlas-data`).
 - Lingua UI: italiano. Importi in euro. Settimana lunedì–domenica.
 
 ## 3. Fuori ambito (v1)
@@ -25,7 +27,7 @@ import da Google Maps/Cronologia, notifiche.
 
 Tab bar in basso: **Mappa · Luoghi · Viaggi · Statistiche · Impostazioni**.
 Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#stats`, `#impostazioni`, `#luogo/<id>`, `#viaggio/<id>`,
-`#diario/<viaggio>/<giorno>`, `#foto/<id>`, `#anno/<AAAA>`.
+`#diario/<viaggio>/<giorno>`, `#anno/<AAAA>`.
 
 ### 4.1 Mappa
 
@@ -34,7 +36,7 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#stats`, `#impostazioni`, `#luogo/
 - Luoghi come punti: pieno = visitato, blu = in programma, anello = da visitare. Raggruppamento (§6.6): pallino con numero; tocco → zoom ×2 centrato.
 - Gesti: trascinamento, pizzico con due dita, rotella e trascinamento su PC, doppio tocco = zoom ×2. Zoom 1×–40× (Mondo), 1×–20× (Italia).
 - Tocco su un'area → foglio: nome, stato, segno manuale (**Segna come visitato** / **Togli segno**), luoghi e viaggi nell'area, **Aggiungi luogo qui**.
-- Tocco su un punto → anteprima del luogo (foto, nome, stato) → apre `#luogo/<id>`.
+- Tocco su un punto → anteprima del luogo (nome, stato) → apre `#luogo/<id>`.
 - Pressione lunga su un punto vuoto della mappa → **Nuovo luogo qui** con quelle coordinate.
 - Filtri: stato, categoria, anno di visita. Pulsante **+** (nuovo luogo).
 
@@ -42,30 +44,29 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#stats`, `#impostazioni`, `#luogo/
 
 - Elenco con ricerca per nome, filtri (stato, categoria, paese, tag, preferiti), ordinamento (modificati di recente, nome, voto, distanza da casa).
 - **Scheda luogo**:
-  - copertina (foto `cover` o prima foto), nome, categoria, stato (§6.1), voto 1–5, preferito ♥;
+  - nome, categoria, stato (§6.1), voto 1–5, preferito ♥;
   - mini mappa con il punto, coordinate, paese / regione / provincia, **Apri in Mappe** (link Apple Maps su iPhone, Google Maps altrove);
   - visite: date in `visits` + tappe di viaggi (con link al viaggio);
   - note, lista "cose da fare" con spunte, link, tag, compagni;
   - da visitare: periodo ideale (mesi), budget stimato;
-  - griglia foto (miniature) → visore a schermo intero con scorrimento, didascalia, data, **Imposta come copertina**, **Elimina**;
-  - **Aggiungi foto**, **Modifica**, **Elimina** (conferma, con opzione "elimina anche le N foto").
+  - **Modifica**, **Elimina** (conferma).
 - **Nuovo/Modifica luogo**:
   - nome (obbligatorio, max 60 caratteri), categoria: `citta`, `borgo`, `natura`, `mare`, `montagna`, `cultura`, `ristorante`, `locale`, `alloggio`, `esperienza`, `altro`;
-  - stato `visited` | `wish`; posizione con quattro modi: **Cerca** per nome (online, §8.4), tocco sulla mini mappa, **Posizione attuale**, da una foto (§7);
+  - stato `visited` | `wish`; posizione con tre modi: **Cerca** per nome (online, §8.4), tocco sulla mini mappa, **Posizione attuale**;
   - paese / regione / provincia calcolati alla scelta della posizione (§8.3), modificabili;
   - campi del modello §5.
 
 ### 4.3 Viaggi (`#viaggi`, `#viaggio/<id>`, `#diario/<viaggio>/<giorno>`)
 
-- Elenco in tre sezioni: **In corso**, **In programma** (per data crescente), **Passati** (per anno, data decrescente); card con copertina, titolo, date, notti, numero tappe, spesa.
+- Elenco in tre sezioni: **In corso**, **In programma** (per data crescente), **Passati** (per anno, data decrescente); card con titolo, date, notti, numero tappe, spesa.
 - **Scheda viaggio**:
-  - copertina, titolo, date, notti, compagni, stato (§6.2);
+  - titolo, date, notti, compagni, stato (§6.2);
   - tappe in ordine (luogo + date facoltative), riordinabili; **Aggiungi tappa** (luogo esistente o nuovo);
   - mappa del percorso: casa → tappe → casa, linee a geodetica approssimata (segmenti dritti in proiezione);
   - **Costi**: per categoria `trasporti`, `alloggio`, `cibo`, `attivita`, `altro` budget vs spesa con barra; elenco spese (importo, categoria, data, nota); totale, costo per notte;
-  - **Diario**: una riga per ogni giorno da `from` a `to` → `#diario/<viaggio>/<giorno>` con testo, luoghi del giorno, foto del giorno;
-  - foto del viaggio, note, link (prenotazioni);
-  - **Modifica**, **Elimina** (conferma, con opzione "elimina anche le N foto").
+  - **Diario**: una riga per ogni giorno da `from` a `to` → `#diario/<viaggio>/<giorno>` con testo, luoghi del giorno;
+  - note, link (prenotazioni);
+  - **Modifica**, **Elimina** (conferma).
 - Accorciando le date, le pagine di diario fuori dal periodo restano salvate e compaiono in "Pagine fuori dalle date".
 
 ### 4.4 Statistiche (`#stats`, `#anno/<AAAA>`)
@@ -79,9 +80,9 @@ Hash router: `#mappa`, `#luoghi`, `#viaggi`, `#stats`, `#impostazioni`, `#luogo/
 ### 4.5 Impostazioni
 
 - Tema: automatico / chiaro / scuro. Casa: luogo base (default Napoli 40,85 N 14,27 E), modificabile con ricerca o posizione attuale.
-- Sincronizzazione (§9): repository, token, password; **Collega** / **Sincronizza ora** / **Scollega**; stato e coda foto ("Caricamento foto 3/12").
-- Spazio: foto sul dispositivo (`navigator.storage.estimate()`), dimensione del repository su GitHub (storico incluso); **Scarica tutte le foto** (per offline).
-- Esporta / Importa backup (solo dati, §9.4). Data ultimo backup, versione app.
+- Sincronizzazione (§9): repository, token, password; **Collega** / **Sincronizza ora** / **Scollega**; stato.
+- Spazio: dati sul dispositivo (`navigator.storage.estimate()`).
+- Esporta / Importa backup (solo dati, §9.3). Data ultimo backup, versione app.
 - Crediti: Natural Earth (confini), OpenStreetMap / Nominatim (ricerca luoghi).
 
 ## 5. Modello dati
@@ -91,10 +92,7 @@ IndexedDB, database `atlas`, versione 1, object store:
 | Store | Chiave | Contenuto |
 |---|---|---|
 | `doc` | `"v1"` | documento JSON (sotto) |
-| `full` | id foto | Blob JPEG ridotto |
-| `thumb` | id foto | Blob JPEG miniatura |
-| `queue` | auto-incremento | `{ op: "put" \| "del", id }` operazioni foto verso GitHub |
-| `meta` | stringa | configurazione sync (`sync`), foto caricate (`up:<id>` = true), documento corrotto (`v1.corrupt`) |
+| `meta` | stringa | configurazione sync (`sync`), documento corrotto (`v1.corrupt`) |
 
 Il documento viene caricato all'avvio, tenuto in memoria e salvato a ogni modifica.
 
@@ -106,31 +104,27 @@ Il documento viene caricato all'avvio, tenuto in memoria e salvato a ogni modifi
     "rating": null, "fav": false, "tags": ["mare"], "note": "", "with": [],
     "todo": [{ "id": "a_k2m4n6", "text": "Sentiero degli Dei", "done": false }],
     "links": [{ "label": "Sito", "url": "https://example.org" }], "months": [5, 6, 9], "budget": 300,
-    "visits": ["2019-08-15"], "cover": "f_x1y2z3", "deleted": false, "updatedAt": 1798364400000 }],
+    "visits": ["2019-08-15"], "deleted": false, "updatedAt": 1798364400000 }],
   "trips": [{ "id": "v_ab12cd", "title": "Costiera", "from": "2026-06-10", "to": "2026-06-14",
-    "with": [], "cover": null, "note": "", "links": [],
+    "with": [], "note": "", "links": [],
     "stops": [{ "place": "l_ab12cd", "from": "2026-06-10", "to": "2026-06-12" }],
     "budget": { "trasporti": 100, "alloggio": 400, "cibo": 200, "attivita": 50, "altro": 0 },
     "costs": [{ "id": "c_p9o8i7", "cat": "alloggio", "amount": 380, "date": "2026-06-10", "note": "B&B" }],
     "deleted": false, "updatedAt": 1798364400000 }],
   "diary": { "v_ab12cd:2026-06-10": { "text": "…", "places": ["l_ab12cd"], "t": 1798364400000 } },
-  "photos": [{ "id": "f_x1y2z3", "place": "l_ab12cd", "trip": "v_ab12cd", "day": "2026-06-10",
-    "taken": 1781078400000, "lat": 40.63, "lon": 14.48, "w": 1600, "h": 1200, "bytes": 312000,
-    "caption": "", "deleted": false, "updatedAt": 1798364400000 }],
   "marks": { "c:PT": { "s": "visited", "t": 1798364400000 } },
   "settings": { "theme": "auto", "home": { "name": "Napoli", "lat": 40.85, "lon": 14.27 }, "lastBackup": 0 }
 }
 ```
 
-- **id**: prefisso + 6 caratteri base36 casuali (`l_` luogo, `v_` viaggio, `f_` foto, `c_` costo, `a_` cosa da fare).
-- **Date** locali `YYYY-MM-DD`, mai UTC; `t`/`updatedAt`/`taken`: millisecondi epoch.
+- **id**: prefisso + 6 caratteri base36 casuali (`l_` luogo, `v_` viaggio, `c_` costo, `a_` cosa da fare).
+- **Date** locali `YYYY-MM-DD`, mai UTC; `t`/`updatedAt`: millisecondi epoch.
 - **places**: `status` `visited` | `wish`; `rating` 1–5 o `null`; `months` 1–12; `budget` euro o `null`; `visits` date di visite fuori dai viaggi;
   `country` codice paese (§8.1), `region`/`province` nomi o `null` (fuori Italia `null`).
 - **trips**: `from ≤ to` obbligatorie; `stops[].from/to` facoltative, dentro il periodo del viaggio; `budget` per categoria (euro, 0 = non previsto); `costs[].amount` euro > 0.
 - **diary**: chiave `<id viaggio>:<giorno>`; `places` = luoghi del giorno.
-- **photos**: almeno uno tra `place` e `trip`; `day` facoltativo (giorno del diario); `taken`, `lat`, `lon` da EXIF o `null`; `w`, `h`, `bytes` della versione ridotta.
 - **marks**: chiavi `c:<codice paese>`, `r:<nome regione>`, `p:<nome provincia>`; `s` `visited` oppure `null` (segno tolto; la chiave resta per il merge).
-- Soft delete (`deleted: true`) per luoghi, viaggi, foto; gli oggetti restano per il merge. Le foto eliminate perdono i Blob locali e vanno in coda `del`.
+- Soft delete (`deleted: true`) per luoghi e viaggi; gli oggetti restano per il merge.
 - All'avvio: `navigator.storage.persist()`.
 
 ## 6. Regole (`logic.js`, funzioni pure)
@@ -163,26 +157,15 @@ Una regione o provincia visitata rende visitata anche l'Italia (`c:IT`).
 ### 6.5 Anno in viaggio (anno A)
 Viaggi con `from` in A (non futuri); giorni in viaggio in A; km in A; spesa dei viaggi di A; paesi visti per la prima volta in A
 (prima data di visita del paese = minima tra `visits` e date di tappa dei suoi luoghi; i paesi solo segnati non hanno data e sono esclusi);
-luogo con voto più alto visitato in A; numero di foto con `taken` in A; mappa con i paesi visitati in A.
+luogo con voto più alto visitato in A; mappa con i paesi visitati in A.
 
 ### 6.6 Raggruppamento punti
 Dopo ogni cambio di zoom: proiezione dei punti in coordinate schermo, griglia di 44 px; celle con più di un punto → pallino con il numero
 posizionato alla media dei punti; cella con un punto → punto singolo.
 
-### 6.7 Suggerimenti da foto
-- Con `lat/lon`: luogo esistente più vicino entro 1 km (haversine), altrimenti proposta "Nuovo luogo qui" (nome da ricerca inversa §8.4 se online, altrimenti coordinate).
-- Con `taken`: viaggio il cui periodo contiene la data locale dello scatto → proposto viaggio e giorno del diario.
-- I suggerimenti si confermano o si cambiano prima di salvare.
+## 7. Foto
 
-## 7. Foto (`photos.js`, `exif.js`)
-
-- `<input type="file" accept="image/*" multiple>`.
-- Per ogni file: lettura EXIF (solo JPEG: `DateTimeOriginal` come ora locale, GPS con riferimenti N/S/E/W) →
-  `createImageBitmap(file, { imageOrientation: 'from-image' })` → canvas → due JPEG:
-  ridotta lato lungo ≤ 1600 px qualità 0,82; miniatura lato lungo ≤ 320 px qualità 0,7 (immagini più piccole non vengono ingrandite).
-- Salvataggio Blob in `full`/`thumb`, metadati nel documento, operazione `put` in `queue`.
-- Decodifica fallita (es. HEIC su PC) → messaggio per quel file ("Formato non supportato: convertila in JPEG"), le altre proseguono.
-- Visualizzazione: Blob locale se presente, altrimenti scaricamento da GitHub (§9.3) e salvataggio locale; senza rete né Blob → segnaposto.
+Non previste (vedi intro). Il numero resta per non cambiare i riferimenti alle sezioni successive.
 
 ## 8. Mappa e dati geografici
 
@@ -221,26 +204,16 @@ Punto fuori da ogni area (mare, costa semplificata) → area più vicina entro 2
   `data` = AES-GCM 256 del JSON compresso con `CompressionStream('gzip')`.
 - Lettura: `GET /repos/{owner}/{repo}/contents/atlas.json` → `sha` + contenuto base64; se il contenuto non è incluso (file > 1 MB) → `GET /repos/{owner}/{repo}/git/blobs/{sha}`.
 - **Collega**: file assente (404) → nuovo salt, scrittura del documento locale; presente → decifra (errore = "Password errata"), merge, scrittura se serve.
-  Poi in coda `put` tutte le foto locali senza `up:<id>`.
 - **Sync** (come Habits: avvio, ritorno online, ritorno in primo piano, 3 s dopo ogni modifica, passaggio in background con sync in attesa, **Sincronizza ora**):
   leggi → decifra → merge → `PUT` (con `sha`) solo se i dati locali hanno qualcosa di più recente del remoto.
   Risposta 409 → rilettura, merge, nuovo tentativo (massimo 3). Modifiche durante la sync preservate (merge finale con lo stato corrente).
 
-### 9.3 Foto
-- File `photos/<id>.thumb` e `photos/<id>.full` = `IV (12 B) ‖ AES-GCM(JPEG)` con dati aggiuntivi autenticati `"<id>.thumb"` / `"<id>.full"`.
-- Coda `put`: carica `.thumb` poi `.full` (`PUT …/contents/photos/<id>.<tipo>`, contenuto base64), una foto alla volta; 422 "file esistente" = già caricato; poi `up:<id>` = true.
-- Coda `del`: per ogni tipo `GET` dei metadati (per lo `sha`) e `DELETE`; 404 = già eliminato.
-- Download: `GET …/contents/photos/<id>.<tipo>` con `Accept: application/vnd.github.raw+json` → decifra → Blob locale. Miniature quando visibili, ridotta quando aperta; **Scarica tutte** = tutte le mancanti.
-- Errore di rete: la coda si ferma e riprende alla prossima sync. 403 con `x-ratelimit-remaining: 0` → pausa fino a `x-ratelimit-reset`.
-- Merge con foto `deleted: true` arrivate da un altro dispositivo → rimozione dei Blob locali (il file remoto lo elimina il dispositivo che ha cancellato).
-- Le foto eliminate restano nello storico git del repository: lo spazio non si libera. Dimensione repository da `GET /repos/{owner}/{repo}` (`size`, KB).
+### 9.3 Backup
+File `atlas-backup-AAAA-MM-GG.json` (solo documento); iPhone `navigator.share({files})`, PC download.
+Import con validazione, poi merge.
 
-### 9.4 Backup
-File `atlas-backup-AAAA-MM-GG.json` (solo documento, senza foto); iPhone `navigator.share({files})`, PC download.
-Import con validazione, poi merge. Le foto senza sync esistono solo sul dispositivo dove sono state aggiunte (avviso in Impostazioni).
-
-### 9.5 Merge (vince il più recente)
-`places`, `trips`, `photos` per `id` con `updatedAt`; `diary`, `marks` per chiave con `t`; `settings` locali, `lastBackup` = max.
+### 9.4 Merge (vince il più recente)
+`places`, `trips` per `id` con `updatedAt`; `diary`, `marks` per chiave con `t`; `settings` locali, `lastBackup` = max.
 Esito: "N elementi aggiornati".
 
 ## 10. Architettura file
@@ -258,22 +231,20 @@ js/db.js                unico modulo che accede a IndexedDB
 js/store.js             documento in memoria, CRUD, evento change, salvataggio, backup, scheduling sync
 js/logic.js             stati, giorni, km, statistiche, anno in viaggio (puro)
 js/geo.js               proiezioni, decodifica, punto nel poligono, haversine, raggruppamento (puro)
-js/exif.js              EXIF JPEG: data e GPS (puro)
 js/merge.js             validateDoc, mergeDocs (puro)
 js/map.js               mappa SVG, gesti, livelli, tocchi
-js/photos.js            selezione, riduzione, miniature, archivio locale, visualizzazione
-js/crypto.js            da Habits + gzip + cifratura binaria con dati aggiuntivi
-js/sync.js              GitHub Contents API: documento, foto, coda, conflitti, limiti
+js/crypto.js            da Habits + gzip
+js/sync.js              GitHub Contents API: documento, conflitti, limiti
 js/search.js            Nominatim diretta e inversa
 js/charts.js            da Habits
 js/ui.js                escape, formattazione, palette, fogli modali
 js/views/               map, places, place, place-edit, trips, trip, trip-edit, diary,
-                        photo-viewer, stats, year, settings
+                        stats, year, settings
 scripts/                build-geo.mjs, serve.mjs, make-icons.mjs
-tests/                  logic, geo, exif, merge, sync (.test.js, node --test)
+tests/                  logic, geo, merge, sync (.test.js, node --test)
 ```
 
-- `logic.js`, `geo.js`, `exif.js`, `merge.js` non accedono a DOM, rete né storage.
+- `logic.js`, `geo.js`, `merge.js` non accedono a DOM, rete né storage.
 - `db.js` è l'unico modulo che usa IndexedDB; `store.js` l'unico che modifica il documento e notifica le viste con `change`.
 - Viste: `render(container, state)`; la mappa aggiorna solo i livelli cambiati.
 - **Aspetto** (terracotta, scelta dall'utente il 2026-10-28): token e componenti di Habits; `--accent: #c2410c` (grafici, aree visitate), `--accent-strong: #9a3412` per pulsanti pieni con testo bianco (7,3:1);
@@ -293,7 +264,6 @@ Il service worker di Atlas cancella solo le cache `atlas-*` diverse da quella co
 | Caso | Comportamento |
 |---|---|
 | IndexedDB non disponibile | banner persistente, nessun salvataggio |
-| Quota superata salvando una foto | "Spazio esaurito sul dispositivo", foto non aggiunta |
 | Documento corrotto | copia in `meta["v1.corrupt"]`, avvio vuoto, avviso |
 | Import invalido | messaggio, nessuna modifica |
 | Sync 401 | "Token non valido o scaduto" + banner |
@@ -302,16 +272,14 @@ Il service worker di Atlas cancella solo le cache `atlas-*` diverse da quella co
 | Sync 404 repository | "Repository non trovato" + banner |
 | Decifratura fallita | "Password errata" (collega) / "Password cambiata su un altro dispositivo: ricollega" (sync) + banner |
 | Sync 409 | nuovo tentativo automatico (max 3), poi "Riprova più tardi" |
-| Rete assente | coda e sync in attesa, nessun banner |
-| Foto non decodificabile | messaggio per il file, le altre proseguono |
-| Foto remota mancante (404) | segnaposto "Foto non disponibile" |
+| Rete assente | sync in attesa, nessun banner |
 | gzip non supportato | "Browser non supportato per la sincronizzazione" |
 | Ricerca senza rete | "Serve internet per cercare: tocca la mappa o usa la posizione" |
 | Geolocalizzazione negata | messaggio, inserimento manuale |
 
 ## 13. Import dell'Atlante dei weekend
 
-`seed/weekend.json` è un backup Atlas (§9.4) generato una volta dai dati dell'artifact "Atlante dei weekend"; l'utente lo importa con **Importa backup**.
+`seed/weekend.json` è un backup Atlas (§9.3) generato una volta dai dati dell'artifact "Atlante dei weekend"; l'utente lo importa con **Importa backup**.
 - 8 luoghi `status: wish`, categoria `citta`: Dublino, Atene, Parigi, Berlino, Varsavia, Cracovia, Tirana, Tolosa, con coordinate,
   `todo` = "cosa fare", `note` = monumento simbolo + "da sapere", `months` = mese del periodo indicato,
   `budget` = volo + trasporti + media hotel + media cibo (a persona).
@@ -325,11 +293,10 @@ Il service worker di Atlas cancella solo le cache `atlas-*` diverse da quella co
   - `logic`: stati luogo (tappa passata/futura, visite, `status`), stati viaggio, aree con segni manuali e regione → Italia, giorni in viaggio con sovrapposizioni e anno a cavallo,
     km haversine su distanze note, spesa/scostamento/costo per notte (notti = 0), più lontano ed estremi, anno in viaggio (paesi nuovi, segnati esclusi);
   - `geo`: Equal Earth su punti noti, decodifica, punto nel poligono con i dati veri (Napoli → IT / Campania / Napoli; Lisbona → PT; punto in mare vicino alla costa entro 20 km), raggruppamento;
-  - `exif`: JPEG costruiti nel test con e senza GPS, riferimenti S/W, data;
   - `merge`: per `id`, per chiave, `marks.s = null`, diario, validazione;
   - `sync`: API GitHub simulata in memoria: collega (nuovo / esistente / password errata), push solo se necessario, 409 con nuovo tentativo, documento > 1 MB via blob,
-    upload/download/eliminazione foto, 422 su file esistente, coda dopo errore di rete, limite richieste, contenuto non leggibile in chiaro.
-- Browser (viewport mobile, server locale): nuovo luogo con pressione lunga sulla mappa e con ricerca simulata; foto di prova con GPS → suggerimento;
+    422 alla creazione concorrente, errore di rete, limite richieste, contenuto non leggibile in chiaro.
+- Browser (viewport mobile, server locale): nuovo luogo con pressione lunga sulla mappa e con ricerca simulata;
   viaggio con tappe, costi, diario; statistiche e anno in viaggio; offline con service worker; sync con `fetch` simulato. La prova reale con token la esegue l'utente.
 
 ## 15. Pubblicazione

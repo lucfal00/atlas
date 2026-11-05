@@ -5,7 +5,7 @@ const dec = new TextDecoder();
 
 export const ITERATIONS = 310000;
 
-/** Base64 of any byte array; built in chunks so photos and large documents never overflow the call stack. */
+/** Base64 of any byte array; built in chunks so large documents never overflow the call stack. */
 export function toB64(buf) {
   const b = new Uint8Array(buf);
   let s = '';
@@ -75,24 +75,4 @@ export function parseEnvelope(text) {
 export async function unseal(key, env) {
   const packed = await subtle.decrypt({ name: 'AES-GCM', iv: fromB64(env.iv) }, key, fromB64(env.data));
   return JSON.parse(dec.decode(await gunzip(new Uint8Array(packed))));
-}
-
-// ---- binary (photos) ---------------------------------------------------
-
-/** IV (12 B) ‖ AES-GCM(bytes); `aad` (the file name) is authenticated, so a blob cannot be swapped for another. */
-export async function sealBytes(key, bytes, aad) {
-  const iv = randomBytes(12);
-  const ct = await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: enc.encode(aad) }, key, bytes);
-  const out = new Uint8Array(12 + ct.byteLength);
-  out.set(iv);
-  out.set(new Uint8Array(ct), 12);
-  return out;
-}
-
-/** Inverse of sealBytes; throws (OperationError) on a wrong key, wrong `aad` or altered data. */
-export async function openBytes(key, data, aad) {
-  const buf = await subtle.decrypt(
-    { name: 'AES-GCM', iv: data.subarray(0, 12), additionalData: enc.encode(aad) }, key, data.subarray(12),
-  );
-  return new Uint8Array(buf);
 }

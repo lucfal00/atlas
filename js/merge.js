@@ -9,7 +9,7 @@ const stamp = (o, field) => (Number.isFinite(o?.[field]) ? o[field] : 0);
 
 export function validateDoc(d) {
   return isObj(d) && d.version === 1
-    && validItems(d.places) && validItems(d.trips) && validItems(d.photos)
+    && validItems(d.places) && validItems(d.trips)
     && isObj(d.diary) && isObj(d.marks) && isObj(d.settings);
 }
 
@@ -51,7 +51,7 @@ export function mergeDocs(local, incoming) {
   const doc = structuredClone(local);
   const inc = structuredClone(incoming);
   let count = 0;
-  for (const key of ['places', 'trips', 'photos']) {
+  for (const key of ['places', 'trips']) {
     const r = mergeById(doc[key], inc[key]);
     doc[key] = r.list;
     count += r.count;

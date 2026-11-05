@@ -4,11 +4,11 @@
 const CACHE = 'atlas-v1';
 const FILES = [
   './', './index.html', './style.css', './manifest.webmanifest',
-  './js/app.js', './js/db.js', './js/store.js', './js/logic.js', './js/geo.js', './js/exif.js', './js/merge.js',
-  './js/map.js', './js/photos.js', './js/crypto.js', './js/sync.js', './js/search.js', './js/charts.js', './js/ui.js',
+  './js/app.js', './js/db.js', './js/store.js', './js/logic.js', './js/geo.js', './js/merge.js',
+  './js/map.js', './js/crypto.js', './js/sync.js', './js/search.js', './js/charts.js', './js/ui.js',
   './js/views/map.js', './js/views/places.js', './js/views/place.js', './js/views/place-edit.js',
   './js/views/trips.js', './js/views/trip.js', './js/views/trip-edit.js', './js/views/diary.js',
-  './js/views/photo-viewer.js', './js/views/stats.js', './js/views/year.js', './js/views/settings.js',
+  './js/views/stats.js', './js/views/year.js', './js/views/settings.js',
   './geo/world.json', './geo/italia.json',
   './icons/atlas-v1.svg', './icons/atlas-v1-192.png', './icons/atlas-v1-512.png',
   './icons/atlas-v1-maskable-512.png', './icons/atlas-v1-apple-180.png',

@@ -43,7 +43,7 @@ test('newId: prefix + 6 base36 chars, distinct', () => {
 test('emptyDoc: spec 5 shape, independent instances', () => {
   const d = L.emptyDoc();
   assert.deepEqual(d, {
-    version: 1, places: [], trips: [], diary: {}, photos: [], marks: {},
+    version: 1, places: [], trips: [], diary: {}, marks: {},
     settings: { theme: 'auto', home: { name: 'Napoli', lat: 40.85, lon: 14.27 }, lastBackup: 0 },
   });
   d.places.push(1);
@@ -413,18 +413,10 @@ const yearDoc = () => mk({
     trip('t4', '2026-12-01', '2026-12-05', { stops: [stop('fr')], costs: [{ id: 'c4', cat: 'cibo', amount: 999 }] }),
     trip('t5', '2026-02-01', '2026-02-02', { deleted: true, costs: [{ id: 'c5', cat: 'cibo', amount: 999 }] }),
   ],
-  photos: [
-    { id: 'f1', trip: 't1', taken: local(2026, 6, 11) },
-    { id: 'f2', trip: 't1', taken: local(2026, 1, 1, 0, 5) },
-    { id: 'f3', trip: 't1', taken: local(2026, 12, 31, 23, 55) },
-    { id: 'f4', trip: 't1', taken: local(2025, 12, 31, 23, 55) },
-    { id: 'f5', trip: 't1', taken: local(2026, 6, 12), deleted: true },
-    { id: 'f6', trip: 't1', taken: null },
-  ],
   marks: { 'c:ES': { s: 'visited', t: 1 } },
 });
 
-test('yearInTravel: trips, days, km, spend, photos', () => {
+test('yearInTravel: trips, days, km, spend', () => {
   const doc = yearDoc();
   doc.trips[0].stops.push(stop('r'));
   const y = L.yearInTravel(doc, 2026, TODAY);
@@ -434,7 +426,6 @@ test('yearInTravel: trips, days, km, spend, photos', () => {
   assert.equal(y.km, L.yearKm(doc, 2026, TODAY));
   assert.ok(y.km > 0);
   assert.equal(y.spend, 350);
-  assert.equal(y.photos, 3);
 });
 
 test('yearInTravel: new countries exclude earlier visits and mark-only countries', () => {
@@ -445,61 +436,9 @@ test('yearInTravel: new countries exclude earlier visits and mark-only countries
   const y25 = L.yearInTravel(yearDoc(), 2025, TODAY);
   assert.deepEqual(y25.newCountries, ['FR']);
   assert.deepEqual(y25.trips.map((t) => t.id), ['t3']);
-  assert.equal(y25.photos, 1);
 });
 
 test('yearInTravel: empty year', () => {
   const y = L.yearInTravel(mk(), 2026, TODAY);
-  assert.deepEqual(y, { trips: [], days: 0, km: 0, spend: 0, newCountries: [], bestPlace: null, photos: 0, countries: [] });
-});
-
-// ---- Photo suggestions -------------------------------------------------
-
-const photoDoc = () => mk({
-  places: [
-    place('near', { lat: 40.85, lon: 14.27 }),
-    place('far', { lat: 40.9, lon: 14.3 }),
-    place('del', { lat: 45, lon: 9, deleted: true }),
-  ],
-  trips: [
-    trip('v1', '2026-06-10', '2026-06-14'),
-    trip('v2', '2026-06-12', '2026-06-20'),
-    trip('v0', '2026-07-01', '2026-07-03', { deleted: true }),
-  ],
-});
-
-test('suggestFromPhoto: place within 1 km, otherwise newHere', () => {
-  const doc = photoDoc();
-  // 0.0054 deg of latitude is about 600 m; 0.0135 deg about 1.5 km
-  const close = L.suggestFromPhoto(doc, { lat: 40.85 + 0.0054, lon: 14.27, taken: null });
-  assert.deepEqual(close, { place: 'near', newHere: false, trip: null, day: null });
-  const away = L.suggestFromPhoto(doc, { lat: 40.85 + 0.0135, lon: 14.27, taken: null });
-  assert.deepEqual(away, { place: null, newHere: true, trip: null, day: null });
-  const gone = L.suggestFromPhoto(doc, { lat: 45, lon: 9, taken: null }); // deleted place does not match
-  assert.equal(gone.place, null);
-  assert.equal(gone.newHere, true);
-});
-
-test('suggestFromPhoto: nearest place wins', () => {
-  const doc = mk({ places: [place('a', { lat: 10, lon: 10 }), place('b', { lat: 10.002, lon: 10 })] });
-  assert.equal(L.suggestFromPhoto(doc, { lat: 10.0015, lon: 10, taken: null }).place, 'b');
-});
-
-test('suggestFromPhoto: trip and diary day from the local date of taken', () => {
-  const doc = photoDoc();
-  const s = L.suggestFromPhoto(doc, { lat: null, lon: null, taken: local(2026, 6, 11, 23, 30) });
-  assert.deepEqual(s, { place: null, newHere: false, trip: 'v1', day: '2026-06-11' });
-  const first = L.suggestFromPhoto(doc, { lat: null, lon: null, taken: local(2026, 6, 13) });
-  assert.equal(first.trip, 'v1'); // overlap: first by from
-  const second = L.suggestFromPhoto(doc, { lat: null, lon: null, taken: local(2026, 6, 18) });
-  assert.deepEqual([second.trip, second.day], ['v2', '2026-06-18']);
-  const none = L.suggestFromPhoto(doc, { lat: null, lon: null, taken: local(2026, 7, 2) }); // deleted trip
-  assert.deepEqual([none.trip, none.day], [null, null]);
-});
-
-test('suggestFromPhoto: photo without data suggests nothing', () => {
-  const doc = photoDoc();
-  const empty = { place: null, newHere: false, trip: null, day: null };
-  assert.deepEqual(L.suggestFromPhoto(doc, { lat: null, lon: null, taken: null }), empty);
-  assert.deepEqual(L.suggestFromPhoto(doc, {}), empty);
+  assert.deepEqual(y, { trips: [], days: 0, km: 0, spend: 0, newCountries: [], bestPlace: null, countries: [] });
 });
