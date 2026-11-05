@@ -434,3 +434,22 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 .map-note { margin: -4px 0 0; font-size: .85rem; }
 .sheet-body .card.list { margin-bottom: 0; }
 .map-prev-title { margin-bottom: 6px; }
+
+/* ---- Places ----------------------------------------------------------- */
+.places-tools { display: grid; gap: 10px; margin-bottom: 8px; }
+.places-tools .chips:empty { display: none; }
+.fab {
+  position: fixed; z-index: 5; right: 16px; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-strong); color: var(--on-accent); font-size: 1.8rem; line-height: 1; text-decoration: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+}
+.link-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.link-row > .two, .link-row > input { flex: 1; min-width: 0; }
+.link-row > .error { flex-basis: 100%; }
+.todo.edit li { gap: 6px; }
+.todo.edit li > .check { flex: none; }
+.todo.edit li > input[type="text"] { flex: 1; min-width: 0; }
+.rows button.row { width: 100%; background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; min-height: 44px; cursor: pointer; }
+.geo-fields { display: grid; gap: 10px; margin-top: 10px; }
+.sheet-body .btn-row { margin-top: 16px; }

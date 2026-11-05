@@ -70,6 +70,9 @@ function stopMap(doc) {
   return m;
 }
 
+/** Lower-case, accent-free form of a string for searching ('Forlì' → 'forli'). */
+export const fold = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 // ---- States ------------------------------------------------------------
 
 function stateOf(place, stops, today) {

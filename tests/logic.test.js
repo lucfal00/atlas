@@ -442,3 +442,9 @@ test('yearInTravel: empty year', () => {
   const y = L.yearInTravel(mk(), 2026, TODAY);
   assert.deepEqual(y, { trips: [], days: 0, km: 0, spend: 0, newCountries: [], bestPlace: null, countries: [] });
 });
+
+test('fold: accent- and case-insensitive form', () => {
+  assert.equal(L.fold('Forlì'), 'forli');
+  assert.equal(L.fold('CITTÀ'), 'citta');
+  assert.equal(L.fold(null), '');
+});
