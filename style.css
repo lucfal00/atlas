@@ -257,7 +257,7 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
   display: grid; place-items: center; background: var(--accent-strong); color: var(--on-accent);
   text-decoration: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
 }
-.map-fab .plus, .fab .plus { display: block; width: 20px; height: 20px; }
+.map-fab .plus, .fab .plus { display: block; width: 28px; height: 28px; }
 
 .map-reset {
   position: absolute; z-index: 2; right: 22px; bottom: 84px; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line);
