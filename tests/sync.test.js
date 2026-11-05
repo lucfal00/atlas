@@ -20,7 +20,6 @@ const OWNER = 'luca-test';
 const REPO = 'atlas-data';
 const PASSWORD = 'correct horse battery';
 const RESET = 1893456000; // x-ratelimit-reset (seconds)
-const RAW = 'application/vnd.github.raw+json';
 const JSON_ACCEPT = 'application/vnd.github+json';
 const OBJECT = 'application/vnd.github.object+json';
 
@@ -71,7 +70,6 @@ function makeGithub({ files = [], counter = 0, inlineLimit = 1e6, size = 42 } = 
     const cur = repo.get(file);
     if (req.method === 'GET') {
       if (!cur) return notFound();
-      if (req.headers.Accept === RAW) return new Response(cur.bytes, { status: 200 });
       // like GitHub, a file of 1–100 MB is only served through the raw or the object media type
       if (req.headers.Accept !== OBJECT) return reply(415, { message: 'Unsupported Media Type' });
       const big = cur.bytes.length > gh.inlineLimit;
@@ -286,9 +284,8 @@ test('api: every request carries the auth, version and no-store headers', async 
   assert.equal(await api.getUser(), OWNER);
   await api.repoSize(OWNER, REPO);
   await api.getFile(OWNER, REPO, 'atlas.json');
-  await api.getRaw(OWNER, REPO, 'atlas.json');
   await api.putFile(OWNER, REPO, 'b.bin', enc.encode('x'), undefined, 'msg');
-  assert.equal(gh.calls.length, 5);
+  assert.equal(gh.calls.length, 4);
   for (const c of gh.calls) {
     assert.ok(c.url.startsWith('https://api.github.com/'));
     assert.equal(c.headers.Authorization, `Bearer ${TOKEN}`);
@@ -298,8 +295,7 @@ test('api: every request carries the auth, version and no-store headers', async 
   assert.equal(gh.calls[0].headers.Accept, JSON_ACCEPT);
   assert.equal(gh.calls[1].headers.Accept, JSON_ACCEPT);
   assert.equal(gh.calls[2].headers.Accept, OBJECT, 'getFile: object media type, works for 1–100 MB files');
-  assert.equal(gh.calls[3].headers.Accept, RAW);
-  assert.equal(gh.calls[4].headers.Accept, JSON_ACCEPT);
+  assert.equal(gh.calls[3].headers.Accept, JSON_ACCEPT);
 });
 
 test('api: getFile decodes wrapped base64, returns null on 404, encodes each path segment', async () => {
@@ -312,8 +308,6 @@ test('api: getFile decodes wrapped base64, returns null on 404, encodes each pat
   assert.deepEqual(f.bytes, bytes);
   assert.ok(gh.calls[0].url.endsWith('/contents/dir/a%20b.bin'));
   assert.equal(await api.getFile(OWNER, REPO, 'nope.json'), null);
-  assert.equal(await api.getRaw(OWNER, REPO, 'nope.json'), null);
-  assert.deepEqual(await api.getRaw(OWNER, REPO, 'dir/a b.bin'), bytes);
 });
 
 test('api: content missing (file > 1 MB) → read through git/blobs/{sha}', async () => {
@@ -327,22 +321,7 @@ test('api: content missing (file > 1 MB) → read through git/blobs/{sha}', asyn
   assert.equal(gh.reqs('GET', `/git/blobs/${sha}`).length, 1);
 });
 
-test('api: getFile metaOnly → {sha, bytes: null} without decoding the content or fetching the blob', async () => {
-  const gh = makeGithub({ inlineLimit: 100 });
-  const small = gh.put('small.bin', randomBytes(50));
-  const big = gh.put('big.bin', randomBytes(5000));
-  const api = makeRepoApi(TOKEN, gh.fetch);
-  assert.deepEqual(await api.getFile(OWNER, REPO, 'small.bin', { metaOnly: true }), { sha: small, bytes: null });
-  assert.deepEqual(await api.getFile(OWNER, REPO, 'big.bin', { metaOnly: true }), { sha: big, bytes: null });
-  assert.equal(await api.getFile(OWNER, REPO, 'nope.bin', { metaOnly: true }), null);
-  assert.equal(gh.reqs('GET', '/git/blobs/' + big).length, 0, 'the blob is never fetched');
-  // content that is not even base64 is never decoded
-  gh.hook = (req) => (req.path.endsWith('/contents/small.bin')
-    ? reply(200, { sha: small, encoding: 'base64', content: '***not base64***' }) : undefined);
-  assert.deepEqual(await api.getFile(OWNER, REPO, 'small.bin', { metaOnly: true }), { sha: small, bytes: null });
-});
-
-test('api: putFile body and result, deleteFile, repoSize', async () => {
+test('api: putFile body and result, repoSize', async () => {
   const gh = makeGithub({ size: 1234 });
   const api = makeRepoApi(TOKEN, gh.fetch);
   const bytes = randomBytes(100);
@@ -356,9 +335,6 @@ test('api: putFile body and result, deleteFile, repoSize', async () => {
   const sha2 = await api.putFile(OWNER, REPO, 'x.bin', randomBytes(10), sha1, 'second');
   assert.notEqual(sha2, sha1);
   assert.equal(gh.calls.at(-1).body.sha, sha1);
-  await api.deleteFile(OWNER, REPO, 'x.bin', sha2);
-  assert.equal(gh.repo.has('x.bin'), false);
-  await api.deleteFile(OWNER, REPO, 'x.bin', sha2); // already gone: 404 is fine
   assert.equal(await api.repoSize(OWNER, REPO), 1234);
 });
 
@@ -446,7 +422,7 @@ test('api: a body that errors while it is read (connection dropped) → network'
   const api = makeRepoApi(TOKEN, gh.fetch);
   gh.hook = () => new Response(new ReadableStream({ start: (c) => c.error(new TypeError('terminated')) }), { status: 200 });
   await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
-  await rejectsSync(api.getRaw(OWNER, REPO, 'atlas.json'), 'network');
+  await rejectsSync(api.getFile(OWNER, REPO, 'atlas.json'), 'network');
 });
 
 test('api: fetch that throws → network', async () => {
@@ -454,7 +430,7 @@ test('api: fetch that throws → network', async () => {
   gh.offline = true;
   const api = makeRepoApi(TOKEN, gh.fetch);
   await rejectsSync(api.getUser(), 'network', 'Rete non disponibile');
-  await rejectsSync(api.getRaw(OWNER, REPO, 'a'), 'network');
+  await rejectsSync(api.getFile(OWNER, REPO, 'a'), 'network');
   await rejectsSync(api.putFile(OWNER, REPO, 'a', randomBytes(1), undefined, 'm'), 'network');
 });
 

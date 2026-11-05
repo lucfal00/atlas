@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDoc, mergeDocs } from '../js/merge.js';
+import { validateDoc, sanitizeDoc, mergeDocs } from '../js/merge.js';
 import { emptyDoc } from '../js/logic.js';
 
 // ---- helpers -----------------------------------------------------------
 
 const place = (id, updatedAt, extra = {}) => ({ id, name: id, status: 'wish', deleted: false, updatedAt, ...extra });
-const trip = (id, updatedAt, extra = {}) => ({ id, title: id, deleted: false, updatedAt, ...extra });
+const trip = (id, updatedAt, extra = {}) => ({ id, title: id, from: '2026-06-10', to: '2026-06-12', deleted: false, updatedAt, ...extra });
 
 function docWith(parts = {}) {
   return { ...emptyDoc(), ...parts };
@@ -54,7 +54,57 @@ test('validateDoc: places and trips must be arrays of objects with a string id',
     assert.equal(validateDoc({ ...emptyDoc(), [key]: [{}] }), false);
     assert.equal(validateDoc({ ...emptyDoc(), [key]: [{ id: 7 }] }), false);
     assert.equal(validateDoc({ ...emptyDoc(), [key]: [{ id: 'a' }, { name: 'no id' }] }), false);
-    assert.equal(validateDoc({ ...emptyDoc(), [key]: [{ id: 'a' }] }), true);
+  }
+  assert.equal(validateDoc({ ...emptyDoc(), places: [place('a', 1)] }), true);
+  assert.equal(validateDoc({ ...emptyDoc(), trips: [trip('a', 1)] }), true);
+});
+
+test('validateDoc: deep checks on places', () => {
+  const ok = (extra) => validateDoc({ ...emptyDoc(), places: [place('a', 1, extra)] });
+  assert.equal(ok({ lat: 40.8, lon: 14.2, rating: 5, tags: [], todo: [{ id: 'a', text: 'x' }], visits: ['2026-06-10'] }), true);
+  assert.equal(ok({ lat: null, lon: null, rating: null }), true);
+  for (const bad of [{ name: 5 }, { name: undefined }, { lat: '40' }, { lon: NaN }, { rating: 0 }, { rating: 6 }, { rating: -1 },
+    { rating: 3.5 }, { rating: 'x' }, { tags: 'a' }, { with: {} }, { todo: 'x' }, { todo: [1] }, { links: null }, { months: 3 },
+    { visits: 'x' }, { visits: ['10/06'] }, { budget: 'x' }]) {
+    assert.equal(ok(bad), false, JSON.stringify(bad));
+  }
+});
+
+test('validateDoc: deep checks on trips, diary and marks', () => {
+  const okT = (extra) => validateDoc({ ...emptyDoc(), trips: [trip('a', 1, extra)] });
+  assert.equal(okT({ stops: [{ place: 'l_a', from: '2026-06-10', to: '2026-06-11' }], costs: [{ id: 'c', cat: 'cibo', amount: 12.5 }] }), true);
+  for (const bad of [{ from: undefined }, { to: '2026-6-1' }, { from: '2026-06-13' }, { title: 3 }, { stops: {} }, { stops: [1] },
+    { stops: [{ place: 3 }] }, { stops: [{ place: 'x', from: 'x' }] }, { costs: 'x' }, { costs: [{ amount: '12' }] },
+    { costs: [{ amount: NaN }] }, { costs: [null] }, { with: 'a' }, { links: {} }, { budget: [] }]) {
+    assert.equal(okT(bad), false, JSON.stringify(bad));
+  }
+  assert.equal(validateDoc({ ...emptyDoc(), diary: { k: { text: 'x', places: [], t: 1 } } }), true);
+  assert.equal(validateDoc({ ...emptyDoc(), diary: { k: 'x' } }), false);
+  assert.equal(validateDoc({ ...emptyDoc(), diary: { k: { text: 3 } } }), false);
+  assert.equal(validateDoc({ ...emptyDoc(), diary: { k: { places: 'x' } } }), false);
+  assert.equal(validateDoc({ ...emptyDoc(), marks: { 'c:IT': { s: null, t: 1 } } }), true);
+  assert.equal(validateDoc({ ...emptyDoc(), marks: { 'c:IT': 'visited' } }), false);
+  assert.equal(validateDoc({ ...emptyDoc(), marks: { 'c:IT': { s: 5 } } }), false);
+});
+
+test('sanitizeDoc: drops single malformed items and counts them; wrong overall shape → null', () => {
+  const d = docWith({
+    places: [place('a', 1), place('bad', 1, { rating: -3 }), { id: 'x' }],
+    trips: [trip('t', 1), trip('tbad', 1, { from: null })],
+    diary: { ok: { text: 'x', t: 1 }, no: 'x' },
+    marks: { 'c:IT': { s: 'visited', t: 1 }, 'c:FR': 7 },
+  });
+  const r = sanitizeDoc(d);
+  assert.equal(r.dropped, 5);
+  assert.deepEqual(ids(r.doc.places), ['a']);
+  assert.deepEqual(ids(r.doc.trips), ['t']);
+  assert.deepEqual(Object.keys(r.doc.diary), ['ok']);
+  assert.deepEqual(Object.keys(r.doc.marks), ['c:IT']);
+  assert.equal(validateDoc(r.doc), true);
+  assert.equal(d.places.length, 3, 'input untouched');
+  assert.equal(sanitizeDoc(emptyDoc()).dropped, 0);
+  for (const bad of [null, [], { ...emptyDoc(), version: 2 }, { ...emptyDoc(), places: {} }, { ...emptyDoc(), settings: null }]) {
+    assert.equal(sanitizeDoc(bad), null);
   }
 });
 

@@ -56,6 +56,9 @@ export function render(el, ctx) {
     timer = setTimeout(flush, DELAY);
   };
   ta.onblur = flush;
+  const onHide = () => { if (document.hidden) flush(); };
+  addEventListener('pagehide', flush);            // iOS suspends the PWA without a blur
+  document.addEventListener('visibilitychange', onHide);
 
   const dayPlaces = () => cur.doc.diary?.[key]?.places || [];
   function drawChips() {
@@ -111,6 +114,8 @@ export function render(el, ctx) {
       drawChips();                                   // the textarea is never touched
     },
     destroy() {
+      removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
       flush();
     },
   };

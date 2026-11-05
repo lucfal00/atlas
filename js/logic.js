@@ -180,7 +180,7 @@ export function yearKm(doc, year, today) {
 export function tripSpend(trip) {
   const byCat = Object.fromEntries(COST_CATS.map((c) => [c, 0]));
   for (const c of trip.costs || []) {
-    byCat[c.cat in byCat ? c.cat : 'altro'] += Number(c.amount) || 0;
+    byCat[COST_CATS.includes(c.cat) ? c.cat : 'altro'] += Number(c.amount) || 0;
   }
   const delta = {};
   let total = 0;

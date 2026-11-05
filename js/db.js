@@ -61,4 +61,3 @@ async function run(store, mode, fn) {
 export const dbGet = (store, key) => run(store, 'readonly', (s) => s.get(key));
 export const dbPut = (store, key, value) => run(store, 'readwrite', (s) => s.put(value, key));
 export const dbDel = (store, key) => run(store, 'readwrite', (s) => s.delete(key));
-export const dbKeys = (store) => run(store, 'readonly', (s) => s.getAllKeys());

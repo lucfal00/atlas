@@ -2,15 +2,68 @@
 // No DOM, no network, no storage.
 
 const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
-const validItems = (a) => Array.isArray(a) && a.every((x) => isObj(x) && typeof x.id === 'string');
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const isStr = (v) => typeof v === 'string';
+const isDay = (v) => isStr(v) && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const optArr = (v) => v === undefined || Array.isArray(v);
+const optNum = (v) => v === undefined || v === null || isNum(v);
 
 /** Timestamp of a record: `field` as a finite number, otherwise 0. */
 const stamp = (o, field) => (Number.isFinite(o?.[field]) ? o[field] : 0);
 
+/** A place that screens can render without throwing. */
+function validPlace(p) {
+  return isObj(p) && isStr(p.id) && isStr(p.name)
+    && optNum(p.lat) && optNum(p.lon) && optNum(p.budget)
+    && (p.rating == null || (Number.isInteger(p.rating) && p.rating >= 1 && p.rating <= 5))
+    && ['tags', 'with', 'todo', 'links', 'months', 'visits'].every((k) => optArr(p[k]))
+    && (p.todo || []).every(isObj)
+    && (p.visits || []).every(isDay);
+}
+
+/** A trip with valid dates and well-formed stops / costs. */
+function validTrip(t) {
+  return isObj(t) && isStr(t.id) && isStr(t.title)
+    && isDay(t.from) && isDay(t.to) && t.from <= t.to
+    && ['with', 'links'].every((k) => optArr(t[k]))
+    && optArr(t.stops) && (t.stops || []).every((s) => isObj(s) && isStr(s.place)
+      && (s.from === undefined || isDay(s.from)) && (s.to === undefined || isDay(s.to)))
+    && optArr(t.costs) && (t.costs || []).every((c) => isObj(c) && isNum(c.amount))
+    && (t.budget === undefined || isObj(t.budget));
+}
+
+const validDiary = (e) => isObj(e) && (e.text === undefined || isStr(e.text)) && optArr(e.places);
+const validMark = (e) => isObj(e) && (e.s === null || e.s === undefined || isStr(e.s));
+
+const allValid = (o, fn) => Object.values(o).every(fn);
+
 export function validateDoc(d) {
   return isObj(d) && d.version === 1
-    && validItems(d.places) && validItems(d.trips)
-    && isObj(d.diary) && isObj(d.marks) && isObj(d.settings);
+    && Array.isArray(d.places) && d.places.every(validPlace)
+    && Array.isArray(d.trips) && d.trips.every(validTrip)
+    && isObj(d.diary) && allValid(d.diary, validDiary)
+    && isObj(d.marks) && allValid(d.marks, validMark)
+    && isObj(d.settings);
+}
+
+/**
+ * Lenient import: drop single malformed places / trips / diary pages / marks instead of rejecting the whole document.
+ * → { doc, dropped } (a clean copy), or null if the document has the wrong overall shape.
+ */
+export function sanitizeDoc(d) {
+  if (!isObj(d) || d.version !== 1 || !Array.isArray(d.places) || !Array.isArray(d.trips)
+    || !isObj(d.diary) || !isObj(d.marks) || !isObj(d.settings)) return null;
+  let dropped = 0;
+  const keep = (list, ok) => list.filter((x) => (ok(x) ? true : (dropped++, false)));
+  const keepMap = (m, ok) => Object.fromEntries(Object.entries(m).filter(([, v]) => (ok(v) ? true : (dropped++, false))));
+  const doc = {
+    ...d,
+    places: keep(d.places, validPlace),
+    trips: keep(d.trips, validTrip),
+    diary: keepMap(d.diary, validDiary),
+    marks: keepMap(d.marks, validMark),
+  };
+  return { doc, dropped };
 }
 
 /** Union by id; the greater updatedAt wins, a tie keeps local. Local order, then incoming-only items. */

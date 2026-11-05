@@ -1,5 +1,5 @@
 // Encrypted sync through a private GitHub repository (Contents API). No storage or DOM: callers own state.
-import { mergeDocs, validateDoc } from './merge.js';
+import { mergeDocs, validateDoc, sanitizeDoc } from './merge.js';
 import {
   ITERATIONS, deriveKey, exportKey, importKey, seal, unseal, parseEnvelope, randomBytes, fromB64, toB64,
 } from './crypto.js';
@@ -8,11 +8,10 @@ const API = 'https://api.github.com';
 const DOC = 'atlas.json';
 const MAX_RETRIES = 3; // after a 409: 1 attempt + 3 retries
 const RATE_WAIT = 60000; // ms to wait when GitHub limits us without saying until when
-// object: JSON for a file of 1–100 MB too (content empty, read through the blob); raw: the bytes themselves.
+// object: JSON for a file of 1–100 MB too (content empty, read through the blob).
 const ACCEPT = {
   json: 'application/vnd.github+json',
   object: 'application/vnd.github.object+json',
-  raw: 'application/vnd.github.raw+json',
 };
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -105,22 +104,14 @@ export function makeRepoApi(token, fetchFn = (...a) => fetch(...a)) {
       return (await readBody(await call('GET', repoUrl(owner, repo)), 'json')).size;
     },
 
-    /** {sha, bytes} or null. Files over 1 MB come without content: read through the blob. `metaOnly`: {sha, bytes: null}, no decoding. */
-    async getFile(owner, repo, path, { metaOnly = false } = {}) {
+    /** {sha, bytes} or null. Files over 1 MB come without content: read through the blob. */
+    async getFile(owner, repo, path) {
       const res = await call('GET', fileUrl(owner, repo, path), { accept: 'object', pass: [404] });
       if (res.status === 404) return null;
       const f = await readBody(res, 'json');
-      if (metaOnly) return { sha: f.sha, bytes: null };
       if (f.content && f.encoding === 'base64') return { sha: f.sha, bytes: fromB64(f.content) };
       const blob = await readBody(await call('GET', `${repoUrl(owner, repo)}/git/blobs/${f.sha}`), 'json');
       return { sha: f.sha, bytes: fromB64(blob.content) };
-    },
-
-    /** Raw file bytes or null. */
-    async getRaw(owner, repo, path) {
-      const res = await call('GET', fileUrl(owner, repo, path), { accept: 'raw', pass: [404] });
-      if (res.status === 404) return null;
-      return new Uint8Array(await readBody(res, 'arrayBuffer'));
     },
 
     /** Create (no sha) or update (current sha); returns the new content sha. 409 → conflict, 422 → http with status 422. */
@@ -129,11 +120,6 @@ export function makeRepoApi(token, fetchFn = (...a) => fetch(...a)) {
         body: { message, content: toB64(bytes), ...(sha ? { sha } : {}) },
       });
       return (await readBody(res, 'json')).content.sha;
-    },
-
-    /** Delete with the current sha; an already missing file is fine. */
-    async deleteFile(owner, repo, path, sha) {
-      await call('DELETE', fileUrl(owner, repo, path), { body: { message: `Delete ${path}`, sha }, pass: [404] });
     },
   };
 }
@@ -159,8 +145,9 @@ async function openRemote(key, bytes, wrongKeyMsg) {
     // AES-GCM failure = wrong key; bad base64, gunzip or JSON after a successful decryption = damaged data
     throw e?.name === 'OperationError' ? new SyncError('password', wrongKeyMsg) : new SyncError('format', MSG.remote);
   }
-  if (!validateDoc(remote)) throw new SyncError('format', MSG.remote);
-  return remote;
+  const clean = sanitizeDoc(remote);              // single malformed items are dropped, not the whole document
+  if (!clean) throw new SyncError('format', MSG.remote);
+  return clean.doc;
 }
 
 /**

@@ -228,9 +228,9 @@ export async function render(el, ctx) {
       e.target.value = '';
       if (!file) return;
       try {
-        const { count } = await store.importBackup(file);
+        const { count, dropped } = await store.importBackup(file);
         backupMsg('');
-        toast(`Importati ${count} ${count === 1 ? 'elemento' : 'elementi'}`);
+        toast(`Importati ${count} ${count === 1 ? 'elemento' : 'elementi'}${dropped ? `, ${dropped} non validi ignorati` : ''}`);
       } catch (err) {
         if (!ctx.stale()) backupMsg(err.message || 'Backup non valido', true);
       }

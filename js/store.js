@@ -2,7 +2,7 @@
 // Emits 'change' after data mutations and 'sync' when sync status or the banner changes.
 // Rule: no object taken from `doc` is kept across an await (a sync may replace `doc` meanwhile).
 import { emptyDoc, newId, todayKey, COST_CATS } from './logic.js';
-import { validateDoc, mergeDocs } from './merge.js';
+import { validateDoc, sanitizeDoc, mergeDocs } from './merge.js';
 import { locate } from './geo.js';
 import { connect, syncOnce } from './sync.js';
 import { openDb, dbGet, dbPut, dbDel } from './db.js';
@@ -57,9 +57,11 @@ export async function load() {
   persistent = true;
   if (!cfg?.token) cfg = null;
   if (raw !== undefined) {
-    if (validateDoc(raw)) {
-      doc = raw;
+    const clean = sanitizeDoc(raw);
+    if (clean && !clean.dropped) {
+      doc = clean.doc;
     } else {
+      if (clean) doc = clean.doc;                 // only some items were bad: keep the rest
       try {
         await dbPut('meta', 'v1.corrupt', raw);
         notice = MSG.corrupt;
@@ -88,11 +90,31 @@ export function clearNotice() {
   emit('sync');
 }
 
+// Several windows (tab + installed PWA) share one IndexedDB document: after each write the others merge it in
+// (newest wins) before their own next write, so a stale window cannot overwrite newer edits.
+const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('atlas') : null;
+if (channel) {
+  channel.onmessage = async () => {
+    if (!persistent) return;
+    try {
+      const stored = await dbGet('doc', 'v1');
+      const clean = sanitizeDoc(stored);
+      if (!clean) return;
+      const r = mergeDocs(doc, clean.doc);
+      if (r.count) {
+        doc = r.doc;
+        emit();
+      }
+    } catch { /* best effort */ }
+  };
+}
+
 /** Write the document and notify views, without scheduling a sync. */
 async function persist() {
   if (persistent) {
     try {
       await dbPut('doc', 'v1', doc);
+      channel?.postMessage('doc');
     } catch (e) {
       notice = isQuota(e) ? MSG.full : MSG.saveFail;
     }
@@ -259,11 +281,12 @@ export async function importBackup(file) {
   } catch {
     throw new Error(MSG.badBackup);
   }
-  if (!validateDoc(data)) throw new Error(MSG.badBackup);
-  const r = mergeDocs(doc, data);
+  const clean = sanitizeDoc(data);
+  if (!clean) throw new Error(MSG.badBackup);
+  const r = mergeDocs(doc, clean.doc);
   doc = r.doc;
   await save();
-  return { count: r.count };
+  return { count: r.count, dropped: clean.dropped };
 }
 
 // ---- Sync ----------------------------------------------------------------

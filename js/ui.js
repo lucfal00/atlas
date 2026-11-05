@@ -46,7 +46,15 @@ export const fmtShort = (key) => `${+key.slice(8)}/${+key.slice(5, 7)}`;
 export const fmtFull = (key) => `${fmtShort(key)}/${key.slice(0, 4)}`;
 export const fmtNum = (n) => n.toLocaleString('it-IT', { maximumFractionDigits: 2 });
 export const pct = (f) => (f == null ? '–' : `${Math.round(f * 100)}%`);
-export const parseNum = (s) => parseFloat(String(s).replace(',', '.'));
+/** Italian or plain number: '1.234,50' → 1234.5, '12,5' → 12.5, '12.5' → 12.5; anything else → NaN. */
+export function parseNum(s) {
+  let t = String(s).trim().replace(/\s/g, '');
+  if (t.includes(',')) {
+    if (t.lastIndexOf('.') > t.indexOf(',')) return NaN;   // '1,234.5' is ambiguous
+    t = t.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');   // '1.234' = 1234 (Italian grouping)
+  return /^\d*\.?\d+$/.test(t) ? Number(t) : NaN;
+}
 
 // it-IT drops the thousands separator on 4-digit numbers unless grouping is forced: '1.234,50 €', '1.234 km'.
 const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' });
