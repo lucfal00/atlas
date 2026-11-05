@@ -97,7 +97,7 @@ export async function render(el, ctx) {
         <div class="two"><label class="field">Dal<input type="month" name="from" value="${esc(old?.from || '')}"></label>
           <label class="field">Al<input type="month" name="to" value="${esc(old?.to || '')}"></label></div>
         <p class="error" data-err="date" hidden></p>
-        <label class="check"><input type="checkbox" name="partner"${old?.partner ? ' checked' : ''}><span>Con la fidanzata</span></label>
+        <label class="check"><input type="checkbox" name="partner"${old?.partner ? ' checked' : ''}><span>Adri 🤎</span></label>
         <div class="scores" data-scores>${starsHtml(scores)}</div>
       </div>
       <label class="field">Nota<textarea name="note">${esc(old?.note || '')}</textarea></label>

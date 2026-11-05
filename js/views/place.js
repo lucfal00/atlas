@@ -47,7 +47,7 @@ export async function render(el, ctx) {
       <h1>${esc(p.name || 'Senza nome')}</h1>
       <p class="map-sheet-meta"><small>${esc(catLabel(p.cat))}</small> <span class="pill ${state}">${LABEL[state]}</span>`
       + `${state === 'visited' && p.from ? `<small>${esc(fmtMonths(p.from, p.to))}</small>` : ''}`
-      + `${state === 'visited' && p.partner ? '<span class="badge-partner">con la fidanzata</span>' : ''}</p>
+      + `${state === 'visited' && p.partner ? '<span class="badge-partner">Adri 🤎</span>' : ''}</p>
       ${hasPos ? '<div data-map></div>' : ''}
       <div class="card">
         ${area ? `<p>${area}</p>` : ''}
