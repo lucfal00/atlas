@@ -378,7 +378,8 @@ export async function runSync() {
     } else if (e.code === 'rate') {
       pauseUntilReset(e);
     } else {
-      notice = `Sincronizzazione: ${e.message || 'errore imprevisto.'}`;
+      notice = e.code === 'token' ? 'Token scaduto o non valido: creane uno nuovo'
+        : `Sincronizzazione: ${e.message || 'errore imprevisto.'}`;
       setSync('error', e.message || 'Errore imprevisto.');
     }
   } finally {
