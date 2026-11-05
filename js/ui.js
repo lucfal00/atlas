@@ -26,6 +26,22 @@ export function safeUrl(u) {
 const dayFmt = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
 export const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 export const fmtDay = (key) => cap(dayFmt.format(fromKey(key)));
+const monFmt = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long' });
+/** Short weekday + day + month: 'Mer 10 giugno'. */
+export const fmtDayRow = (key) => `${DAY_SHORT[(fromKey(key).getDay() + 6) % 7]} ${monFmt.format(fromKey(key))}`;
+/** Full day with year: 'Mercoledì 10 giugno 2026'. */
+export const fmtDayYear = (key) => `${fmtDay(key)} ${key.slice(0, 4)}`;
+
+/** Italian date range: '10–14 giu 2026', '30 giu – 2 lug 2026', '30 dic 2025 – 2 gen 2026'; one day → '10 giu 2026'. */
+export function fmtRange(from, to) {
+  const part = (k) => `${+k.slice(8)} ${MONTHS[+k.slice(5, 7) - 1].toLowerCase()}`;
+  const y1 = from.slice(0, 4), y2 = (to || from).slice(0, 4);
+  if (!to || to === from) return `${part(from)} ${y1}`;
+  if (y1 !== y2) return `${part(from)} ${y1} – ${part(to)} ${y2}`;
+  if (from.slice(0, 7) === to.slice(0, 7)) return `${+from.slice(8)}–${part(to)} ${y2}`;
+  return `${part(from)} – ${part(to)} ${y2}`;
+}
+
 export const fmtShort = (key) => `${+key.slice(8)}/${+key.slice(5, 7)}`;
 export const fmtFull = (key) => `${fmtShort(key)}/${key.slice(0, 4)}`;
 export const fmtNum = (n) => n.toLocaleString('it-IT', { maximumFractionDigits: 2 });
