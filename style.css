@@ -17,7 +17,7 @@
   --radius: 18px;
   --tabbar-h: 63px;                  /* tab bar without the safe-area inset */
   --banner-h: 0px;                   /* height of the visible banner (set by app.js) */
-  --partner: #2f7cf6;
+  --partner: #8b5a2b;
   --map-sea: #e3eef1;
   /* Map: resolved on :root, so they follow the theme's --accent / --empty. */
   --map-visited: var(--accent);
@@ -313,7 +313,7 @@ main:has(> .map-wrap.full) { max-width: none; padding: 0; }
 .map-svg .home rect { fill: var(--card); stroke: var(--accent-strong); stroke-width: 2; }
 .map-svg .pt { cursor: pointer; }
 .map-svg .pt .hit { fill: transparent; }
-/* Place points are neutral (white / black), never the area colour: visited = white disc, wish = white ring, partner = blue. */
+/* Place points are neutral (white / black), never the area colour: visited = white disc, wish = white ring, partner = brown. */
 .map-svg .pt .dot.st-visited { fill: #fff; stroke: #15171c; stroke-width: 1.5; }
 .map-svg .pt .dot.st-visited.partner { fill: var(--partner); }
 .map-svg .pt .dot.st-wish { fill: none; stroke: #fff; stroke-width: 3; }
